@@ -199,7 +199,7 @@ AUTH_USER_MODEL = 'users.User'
 # Django Rest Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'auth.authentication.JWTCookieAuthentication',
+        'iam.authentication.JWKSAuthentication',
         # 'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -216,23 +216,13 @@ SPECTACULAR_SETTINGS = {
     'SWAGGER_UI_DIST_PATH': 'drf_spectacular_sidecar/swagger-ui/', # This is an optional setting to specify where the swagger UI is located.
 }
 
-# Simple JWT settings
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': False,
-    'BLACKLIST_AFTER_ROTATION': False,
-    'UPDATE_LAST_LOGIN': False,
-    'AUTH_COOKIE': 'jwt_access', # Name of the cookie for the access token
-    'AUTH_COOKIE_REFRESH': 'jwt_refresh', # Name of the cookie for the refresh token
-    'AUTH_COOKIE_DOMAIN': None, # Set to your domain in production (e.g., '.your-domain.com')
-    'AUTH_COOKIE_SECURE': True, # Set to True in production
-    'AUTH_COOKIE_HTTP_ONLY': True, # Prevents client-side JavaScript from accessing the cookie
-    'AUTH_COOKIE_SAMESITE': 'Lax', # Set to 'Strict' or 'Lax' to protect against CSRF
-}
+CLIENT_ID = os.getenv('CLIENT_ID', 'mull')
+CLIENT_SECRET = os.getenv('CLIENT_SECRET', '')
+AUTH_JWKS_URL = os.getenv('AUTH_JWKS_URL', 'http://localhost:8000/.well-known/jwks.json')
 
-# Initial admin user settings
-# These settings can be overridden by environment variables for security.
-INITIAL_ADMIN_USERNAME = os.environ.get('INITIAL_ADMIN_USERNAME', 'admin')
-INITIAL_ADMIN_PASSWORD = os.environ.get('INITIAL_ADMIN_PASSWORD', 'admin')
-INITIAL_ADMIN_EMAIL = os.environ.get('INITIAL_ADMIN_EMAIL', 'admin@example.com')
+# white list paths for JWKS authentication middleware
+env_exempt_paths = os.getenv('JWKS_EXEMPT_PATHS')
+if env_exempt_paths:
+    JWKS_EXEMPT_PATHS = [path.strip() for path in env_exempt_paths.split(',') if path.strip()]
+else:
+    JWKS_EXEMPT_PATHS = []
