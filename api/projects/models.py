@@ -26,7 +26,7 @@ class Project(BaseModel):
     tags = models.JSONField(default=list, blank=True)
 
     class Meta:
-        ordering = ['-createdAt']
+        ordering = ['-created_at']
         verbose_name = 'project'
         verbose_name_plural = 'projects'
 

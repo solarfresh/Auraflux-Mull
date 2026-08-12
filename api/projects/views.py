@@ -8,6 +8,8 @@ from projects.models import Project
 from projects.serializers import ProjectSerializer
 from rest_framework import status
 from rest_framework.response import Response
+from core.utils import get_serialized_data, create_serialized_data
+from iam.permissions import HasRequiredScope
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,14 @@ class ProjectListCreateAPIView(APIView):
     """
     Handles the listing and creation of projects.
     """
+
+    permission_classes = [HasRequiredScope]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            self.required_scope = 'mull:read'
+        elif self.request.method == 'POST':
+            self.required_scope = 'mull:write'
 
     @extend_schema(
         summary="Retrieve project list",
@@ -31,21 +41,15 @@ class ProjectListCreateAPIView(APIView):
         responses={200: ProjectSerializer(many=True)}
     )
     async def get(self, request, *args, **kwargs):
-        # 1. Get the tag query parameter
         tag_filter = request.query_params.get('tag')
 
-        # 2. Query the database
-        queryset = Project.objects.all()
-
+        query = {}
         if tag_filter:
             # Filter the JSONField array for the specific tag
-            queryset = queryset.filter(tags__contains=[tag_filter])
+            query['tags__contains'] = [tag_filter]
 
-        # 3. Convert queryset to list and serialize asynchronously
-        projects = await sync_to_async(list)(queryset)
-        serializer = ProjectSerializer(projects, many=True)
-
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        data = await sync_to_async(get_serialized_data)(query, Project, ProjectSerializer, many=True)
+        return Response(data, status=status.HTTP_200_OK)
 
     @extend_schema(
         summary="Create a new project",
@@ -57,12 +61,10 @@ class ProjectListCreateAPIView(APIView):
         }
     )
     async def post(self, request, *args, **kwargs):
-        serializer = ProjectSerializer(data=request.data)
+        try:
+            data = await sync_to_async(create_serialized_data)(request.data, ProjectSerializer)
+        except ValueError as errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate and save data
-        if serializer.is_valid():
-            # Save the serializer instance using sync_to_async since ModelSerializer.save() is synchronous
-            await sync_to_async(serializer.save)()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(data, status=status.HTTP_201_CREATED)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
