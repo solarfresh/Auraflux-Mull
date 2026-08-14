@@ -11,6 +11,8 @@ import shutil
 # models, services, and utilities.
 PACKAGE_LIST = [
     'projects',
+    'repositories',
+    'services',
     'iam'
 ]
 

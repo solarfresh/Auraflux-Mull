@@ -161,6 +161,20 @@ CELERY = {
     )
 }
 
+MEDIA_URL = '/storage/'
+MEDIA_ROOT = BASE_DIR / 'storage'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        # "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        # "OPTIONS": {
+        #     "bucket_name": "my-company-repository-bucket",
+        #     "region_name": "ap-northeast-1",
+        # },
+    },
+}
+
 # The cache key prefix ensures our search results don't conflict with other cache uses.
 SEARCH_CACHE_KEY_PREFIX = "user_search_results"
 

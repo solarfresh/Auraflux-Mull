@@ -151,6 +151,8 @@ class RepositoryFileSerializer(ModelSerializer):
     fileName = serializers.CharField(source='file_name')
     fileSize = serializers.CharField(source='file_size')
     fileType = serializers.ChoiceField(choices=SupportedFileType.choices, source='file_type')
+    chunkCount = serializers.IntegerField(source='chunk_count', read_only=True)
+    status = serializers.ChoiceField(choices=ProcessStatus.choices, required=False)
     createdAt = serializers.DateTimeField(
         source='created_at',
         read_only=True,
@@ -170,46 +172,10 @@ class RepositoryFileSerializer(ModelSerializer):
             'fileName',
             'fileSize',
             'fileType',
+            'chunkCount',
             'status',
             'createdAt',
             'updatedAt',
             'chunks',
         ]
-        read_only_fields = ['id', 'chunks', 'createdAt', 'updatedAt']
-
-
-class FileItemSerializer(ModelSerializer):
-    """
-    Simplified File Item Serializer for list views and lightweight UI representations.
-    Mapped to `FileItem` TypeScript interface.
-    """
-    id = serializers.UUIDField(source='file_id', read_only=True)
-    name = serializers.CharField(source='file_name')
-    size = serializers.CharField(source='file_size')
-    type = serializers.CharField(source='file_type', required=False)
-    chunkCount = serializers.IntegerField(source='chunk_count', read_only=True)
-    status = serializers.ChoiceField(choices=ProcessStatus.choices, required=False)
-    createdAt = serializers.DateTimeField(
-        source='created_at',
-        read_only=True,
-        help_text="The timestamp when the project was created"
-    )
-    updatedAt = serializers.DateTimeField(
-        source='updated_at',
-        read_only=True,
-        help_text="The timestamp when the project was last updated"
-    )
-
-    class Meta:
-        model = RepositoryFile
-        fields = [
-            'id',
-            'name',
-            'type',
-            'chunkCount',
-            'size',
-            'status',
-            'createdAt',
-            'updatedAt',
-        ]
-        read_only_fields = ['id', 'chunkCount', 'createdAt', 'updatedAt']
+        read_only_fields = ['id', 'chunkCount', 'chunks', 'createdAt', 'updatedAt']
