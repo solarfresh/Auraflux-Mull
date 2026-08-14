@@ -35,6 +35,8 @@ INSTALLED_APPS = [
     'drf_spectacular_sidecar',
 
     # Local apps
+    'projects.apps.ProjectsConfig',
+    'repositories.apps.RepositoriesConfig'
     # 'users.apps.UsersConfig',
 ]
 
@@ -120,10 +122,7 @@ ASGI_APPLICATION = 'core.asgi.application'
 WSGI_APPLICATION = 'core.wsgi.application'
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '127.0.0.1,localhost').split(',')
 CORS_ALLOW_CREDENTIALS = True
 
 # Database configuration for PostgreSQL
@@ -193,9 +192,6 @@ STATIC_URL = 'static/'
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Custom User Model
-AUTH_USER_MODEL = 'users.User'
-
 # Django Rest Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -214,6 +210,15 @@ SPECTACULAR_SETTINGS = {
     'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
     'SERVE_AUTHENTICATION': [], # This ensures the /swagger-ui/ page itself does not run your custom auth.
     'SWAGGER_UI_DIST_PATH': 'drf_spectacular_sidecar/swagger-ui/', # This is an optional setting to specify where the swagger UI is located.
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'UPDATE_LAST_LOGIN': False,
+    'ALGORITHM': 'RS256',
 }
 
 CLIENT_ID = os.getenv('CLIENT_ID', 'mull')

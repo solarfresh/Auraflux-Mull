@@ -10,13 +10,8 @@ import shutil
 # The 'app' package contains the main application logic, including API endpoints, core functionality,
 # models, services, and utilities.
 PACKAGE_LIST = [
-    'agents',
-    'canvases',
-    'knowledge',
-    'messaging',
     'projects',
-    'realtime',
-    'users'
+    'iam'
 ]
 
 # Create the build directory if it doesn't exist, and clean up any previous builds.

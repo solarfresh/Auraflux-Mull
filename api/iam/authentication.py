@@ -3,6 +3,7 @@ from jwt import PyJWKClient
 from django.conf import settings
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.settings import api_settings
 
 
 class ServiceUser:
@@ -38,8 +39,8 @@ class JWKSAuthentication(BaseAuthentication):
             payload = jwt.decode(
                 token,
                 signing_key.key,
-                algorithms=["RS256"],
-                audience=settings.CLIENT_ID
+                algorithms=api_settings.ALGORITHM,
+                audience=settings.CLIENT_ID,
             )
         except jwt.ExpiredSignatureError:
             raise AuthenticationFailed('Token has expired.')

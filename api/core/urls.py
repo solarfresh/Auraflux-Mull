@@ -4,7 +4,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 urlpatterns = [
     # path('admin/', admin.site.urls),
-    # path('api/users/', include('users.urls')),
+    path('api/projects/', include('projects.urls')),
 ]
 
 # Conditionally include Swagger UI only in development

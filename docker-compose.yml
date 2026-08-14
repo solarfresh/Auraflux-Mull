@@ -10,7 +10,7 @@ services:
     volumes:
       - ./api:/api
     ports:
-      - "8001:8000"
+      - "8002:8000"
     env_file:
       - ./docker-vars.env
       - ./docker-vars.override.env
