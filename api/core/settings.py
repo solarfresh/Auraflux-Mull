@@ -35,7 +35,8 @@ INSTALLED_APPS = [
     'drf_spectacular_sidecar',
 
     # Local apps
-    'projects.apps.ProjectsConfig'
+    'projects.apps.ProjectsConfig',
+    'repositories.apps.RepositoriesConfig'
     # 'users.apps.UsersConfig',
 ]
 
@@ -209,6 +210,15 @@ SPECTACULAR_SETTINGS = {
     'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
     'SERVE_AUTHENTICATION': [], # This ensures the /swagger-ui/ page itself does not run your custom auth.
     'SWAGGER_UI_DIST_PATH': 'drf_spectacular_sidecar/swagger-ui/', # This is an optional setting to specify where the swagger UI is located.
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'UPDATE_LAST_LOGIN': False,
+    'ALGORITHM': 'RS256',
 }
 
 CLIENT_ID = os.getenv('CLIENT_ID', 'mull')

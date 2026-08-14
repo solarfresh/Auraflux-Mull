@@ -38,3 +38,13 @@ class EntityStatus(models.TextChoices):
 
     # Marked for deletion and no longer accessible
     DELETED = 'DELETED', _('Deleted')
+
+
+class ProcessStatus(models.TextChoices):
+    IDLE = 'IDLE', _('Idle')
+    QUEUED = 'QUEUED', _('Queued')
+    PROCESSING = 'PROCESSING', _('Processing')
+    SUCCESS = 'SUCCESS', _('Success')
+    ERROR = 'ERROR', _('Error')
+    CANCELLED = 'CANCELLED', _('Cancelled')
+    PAUSED = 'PAUSED', _('Paused')
