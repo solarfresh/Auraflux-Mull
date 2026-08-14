@@ -41,9 +41,10 @@ class ProjectListCreateAPIView(APIView):
         responses={200: ProjectSerializer(many=True)}
     )
     async def get(self, request, *args, **kwargs):
+        user = request.user
         tag_filter = request.query_params.get('tag')
 
-        query = {}
+        query = {'user_id': user.id}
         if tag_filter:
             # Filter the JSONField array for the specific tag
             query['tags__contains'] = [tag_filter]
@@ -61,8 +62,11 @@ class ProjectListCreateAPIView(APIView):
         }
     )
     async def post(self, request, *args, **kwargs):
+        user = request.user
+        payload = request.data
+
         try:
-            data = await sync_to_async(create_serialized_data)(request.data, ProjectSerializer)
+            data = await sync_to_async(create_serialized_data)(payload, ProjectSerializer, user_id=str(user.id))
         except ValueError as errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 

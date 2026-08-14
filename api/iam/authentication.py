@@ -11,7 +11,7 @@ class ServiceUser:
     def __init__(self, payload):
         self.payload = payload
         self.is_authenticated = True
-        self.user_id = payload.get('user_id')
+        self.id = payload.get('userId')
         self.aud = payload.get('aud')
         self.scopes = payload.get('scope', [])
 

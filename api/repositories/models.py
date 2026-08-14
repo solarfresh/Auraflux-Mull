@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 class RepositoryFile(BaseModel):
     """
-    Repository Document Entity (對應 RepositoryFile 與 FileItem)
+    Repository Document Entity
     """
     file_name = models.CharField(
         max_length=255,
@@ -43,6 +43,13 @@ class RepositoryFile(BaseModel):
         max_length=52,
         default="local",
         help_text="Storage backend type used for this file."
+    )
+
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.CASCADE,
+        related_name='project',
+        help_text="Foreign key to the associated project."
     )
 
     if TYPE_CHECKING:

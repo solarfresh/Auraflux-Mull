@@ -35,6 +35,10 @@ def get_user_search_cache_key(user_id):
     """Generates a unique cache key for a user's search results."""
     return f"{settings.SEARCH_CACHE_KEY_PREFIX}:{user_id}"
 
+def instance_to_data(instance, serializer_class, many=True):
+    serializer = serializer_class(instance, many=many)
+    return serializer.data
+
 def update_serialized_data_by_id(id: UUID, data: Dict[str, Any], model_class, serializer_class):
     instance = model_class.objects.get(id=id)
     serializer = serializer_class(

@@ -1,15 +1,22 @@
+import logging
+
+from adrf.views import APIView
+from asgiref.sync import sync_to_async
 from core.constants import ProcessStatus
-from django.core.files.storage import Storage
+from core.utils import instance_to_data
 from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
+from iam.permissions import HasRequiredScope
 from repositories.models import RepositoryFile, SupportedFileType
 from repositories.serializers import RepositoryFileSerializer
+from repositories.tasks import process_repository_file_task
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from services.storage import FileStorageService
+
+logger = logging.getLogger(__name__)
 
 
 class RepositoryFileUploadView(APIView):
@@ -17,8 +24,17 @@ class RepositoryFileUploadView(APIView):
     API view for uploading document files into the repository and triggering
     background processing (parsing, chunking, and embedding).
     """
+
     parser_classes = [MultiPartParser, FormParser]
     MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
+
+    permission_classes = [HasRequiredScope]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            self.required_scope = 'mull:read'
+        elif self.request.method == 'POST':
+            self.required_scope = 'mull:write'
 
     @extend_schema(
         summary="Upload a document file",
@@ -30,73 +46,112 @@ class RepositoryFileUploadView(APIView):
                     'file': {
                         'type': 'string',
                         'format': 'binary',
-                        'description': 'File to be uploaded'
+                        'description': 'Single file to upload'
+                    },
+                    'files': {
+                        'type': 'array',
+                        'items': {'type': 'string', 'format': 'binary'},
+                        'description': 'Multiple files to upload'
                     }
-                },
-                'required': ['file']
+                }
             }
         },
         responses={202: RepositoryFileSerializer, 400: OpenApiTypes.OBJECT}
     )
-    def post(self, request, project_id, *args, **kwargs):
-        uploaded_file = request.FILES.get('file')
+    async def post(self, request, project_id, *args, **kwargs):
+        uploaded_files = request.FILES.getlist('files') or request.FILES.getlist('file')
 
-        if not uploaded_file:
+        if not uploaded_files:
+            single_file = request.FILES.get('file')
+            if single_file:
+                uploaded_files = [single_file]
+
+        if not uploaded_files:
             return Response(
-                {"error": "No file was provided in the request."},
+                {"error": "No files or file was provided in the request."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if uploaded_file.size > self.MAX_FILE_SIZE_BYTES:
-            return Response(
-                {"error": f"File size exceeds the maximum limit of {self.MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        filename = uploaded_file.name
-        ext = filename.split('.')[-1].lower() if '.' in filename else ''
+        storage_service = FileStorageService()
+        successful_records = []
+        failed_files = []
 
         valid_types = [choice[0] for choice in SupportedFileType.choices]
-        if ext not in valid_types:
-            return Response(
-                {"error": f"Unsupported file type '.{ext}'. Supported types: {valid_types}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        for uploaded_file in uploaded_files:
+            filename = uploaded_file.name
 
+            is_valid, error_msg = self._validate_file(uploaded_file, valid_types)
+            if not is_valid:
+                failed_files.append({"file_name": filename, "reason": error_msg})
+                continue
+
+            try:
+                file_record = await sync_to_async(self._save_single_file_record)(
+                    uploaded_file=uploaded_file,
+                    project_id=project_id,
+                    storage_service=storage_service
+                )
+
+                self._dispatch_background_task(file_record)
+                successful_records.append(file_record)
+            except Exception as e:
+                failed_files.append({"file_name": filename, "reason": f"Internal error during save: {str(e)}"})
+
+        response_data = {
+            "success_count": len(successful_records),
+            "failed_count": len(failed_files),
+            "successful_files": await sync_to_async(instance_to_data)(successful_records, RepositoryFileSerializer, many=True),
+            "failed_files": failed_files
+        }
+
+        response_status = status.HTTP_202_ACCEPTED if successful_records else status.HTTP_400_BAD_REQUEST
+        return Response(response_data, status=response_status)
+
+    @staticmethod
+    def _dispatch_background_task(file_record: RepositoryFile) -> None:
+        process_repository_file_task.delay(str(file_record.id))
+
+    def _validate_file(self, uploaded_file, valid_types) -> tuple[bool, str | None]:
+        filename = uploaded_file.name
+
+        if uploaded_file.size > self.MAX_FILE_SIZE_BYTES:
+            max_mb = self.MAX_FILE_SIZE_BYTES // (1024 * 1024)
+            return False, f"File size exceeds limit ({max_mb} MB)."
+
+        ext = filename.split('.')[-1].lower() if '.' in filename else ''
+        if ext not in valid_types:
+            return False, f"Unsupported file type '.{ext}'."
+
+        return True, None
+
+    def _save_single_file_record(
+        self,
+        uploaded_file,
+        project_id: str,
+        storage_service: FileStorageService
+    ) -> RepositoryFile:
+        filename = uploaded_file.name
+        ext = filename.split('.')[-1].lower()
         human_readable_size = self._format_file_size(uploaded_file.size)
+
         with transaction.atomic():
             file_record = RepositoryFile.objects.create(
+                project_id=project_id,
                 file_name=filename,
                 file_size=human_readable_size,
                 file_type=ext,
                 status=ProcessStatus.QUEUED
             )
 
-            file_path, storage_type = self._save_to_storage(
+            file_path, storage_type = storage_service.save_file(
                 uploaded_file=uploaded_file,
-                folder_prefix=f'{project_id}/repository'
+                folder_prefix=f'{project_id}/repository',
             )
             file_record.file_path = file_path
             file_record.storage_type = storage_type
             file_record.save(update_fields=['file_path', 'storage_type'])
 
-            # process_file_chunks_task.delay(str(file_record.id))
-
-        serializer = RepositoryFileSerializer(file_record)
-        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
-
-    def _save_to_storage(
-        self,
-        uploaded_file,
-        folder_prefix='uploads',
-        custom_storage: Storage | None = None
-    ) -> tuple[str, str]:
-        """
-        Delegates file persistence to FileStorageService.
-        Allows custom storage engines to be injected on demand.
-        """
-        storage_service = FileStorageService(storage_instance=custom_storage)
-        return storage_service.save_file(uploaded_file, folder_prefix)
+        return file_record
 
     @staticmethod
     def _format_file_size(size_in_bytes: int) -> str:

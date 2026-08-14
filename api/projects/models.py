@@ -1,7 +1,9 @@
 import uuid
-from django.db import models
+
 from core.constants import EntityStatus
 from core.models import BaseModel
+from django.contrib.auth import get_user_model
+from django.db import models
 
 
 class Project(BaseModel):
@@ -24,6 +26,12 @@ class Project(BaseModel):
     # Tags as a JSONField (PostgreSQL) or simple text for simplicity
     # If using JSONField, it supports list storage natively
     tags = models.JSONField(default=list, blank=True)
+
+    user_id = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        help_text="The ID of the user owning this project."
+    )
 
     class Meta:
         ordering = ['-created_at']

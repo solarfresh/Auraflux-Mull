@@ -173,6 +173,9 @@ STORAGES = {
         #     "region_name": "ap-northeast-1",
         # },
     },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
 }
 
 # The cache key prefix ensures our search results don't conflict with other cache uses.
