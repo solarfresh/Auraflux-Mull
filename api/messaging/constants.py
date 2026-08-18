@@ -1,0 +1,2 @@
+class Queue:
+    MULL = 'mull'

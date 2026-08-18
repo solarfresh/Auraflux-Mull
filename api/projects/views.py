@@ -2,14 +2,14 @@ import logging
 
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from core.utils import create_serialized_data, get_serialized_data
 from drf_spectacular.utils import (OpenApiParameter, OpenApiResponse,
                                    extend_schema)
+from iam.permissions import HasRequiredScope
 from projects.models import Project
 from projects.serializers import ProjectSerializer
 from rest_framework import status
 from rest_framework.response import Response
-from core.utils import get_serialized_data, create_serialized_data
-from iam.permissions import HasRequiredScope
 
 logger = logging.getLogger(__name__)
 
