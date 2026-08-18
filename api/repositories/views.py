@@ -179,3 +179,62 @@ class RepositoryFileView(APIView):
             size /= 1024.0
 
         return f"{size:.1f} TB"
+
+
+class RepositoryFileDetailView(APIView):
+    """
+    API view for retrieving, updating, or deleting a specific repository file.
+    """
+    permission_classes = [HasRequiredScope]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            self.required_scope = 'mull:read'
+        elif self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            self.required_scope = 'mull:write'
+
+    async def delete(self, request, project_id, file_id, *args, **kwargs):
+        user = request.user
+
+        result, error_msg = await sync_to_async(self._get_and_delete_file)(
+            user_id=str(user.id),
+            project_id=project_id,
+            file_id=file_id
+        )
+
+        if error_msg:
+            return Response(
+                {"error": error_msg},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        file_path, storage_type = result if result else (None, None)
+
+        if file_path:
+            try:
+                storage_service = FileStorageService()
+                await sync_to_async(storage_service.delete_file)(file_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete physical file from storage: {str(e)}")
+
+        return Response(
+            {"message": "File deleted successfully.", "id": file_id},
+            status=status.HTTP_200_OK
+        )
+
+    def _get_and_delete_file(self, user_id: str, project_id: str, file_id: str):
+        try:
+            file_record = RepositoryFile.objects.get(
+                id=file_id,
+                project_id=project_id,
+                user_id=user_id
+            )
+        except RepositoryFile.DoesNotExist:
+            return None, "File not found or permission denied."
+
+        file_path = file_record.file_path
+        storage_type = file_record.storage_type
+
+        file_record.delete()
+
+        return (file_path, storage_type), None

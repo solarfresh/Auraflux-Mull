@@ -56,3 +56,26 @@ class FileStorageService:
             storage_type = "local"
 
         return saved_relative_path, storage_type
+
+    def delete_file(self, file_path: str) -> bool:
+        """
+        Deletes a physical file from the storage engine if it exists.
+
+        Args:
+            file_path (str): Relative file path or S3 key to be deleted.
+
+        Returns:
+            bool: True if the file was successfully deleted or didn't exist,
+                  False if an error occurred during deletion.
+        """
+        if not file_path:
+            return False
+
+        try:
+            # Check file existence prior to deletion to prevent unnecessary storage errors
+            if self.storage.exists(file_path):
+                self.storage.delete(file_path)
+            return True
+        except Exception as e:
+            # Log the error if necessary in your application context
+            return False
