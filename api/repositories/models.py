@@ -1,3 +1,4 @@
+import uuid
 from typing import TYPE_CHECKING
 
 from core.constants import ProcessStatus
@@ -43,6 +44,12 @@ class RepositoryFile(BaseModel):
         max_length=52,
         default="local",
         help_text="Storage backend type used for this file."
+    )
+
+    user_id = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        help_text="The ID of the user owning this file."
     )
 
     project = models.ForeignKey(

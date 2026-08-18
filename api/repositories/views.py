@@ -3,14 +3,16 @@ import logging
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from core.constants import ProcessStatus
-from core.utils import instance_to_data
+from core.utils import (create_serialized_data, get_serialized_data,
+                        instance_to_data)
 from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from iam.permissions import HasRequiredScope
+from messaging.constants import ProcessRepositoryFile
+from messaging.tasks import publish_event
 from repositories.models import RepositoryFile, SupportedFileType
 from repositories.serializers import RepositoryFileSerializer
-from repositories.tasks import process_repository_file_task
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -19,7 +21,7 @@ from services.storage import FileStorageService
 logger = logging.getLogger(__name__)
 
 
-class RepositoryFileUploadView(APIView):
+class RepositoryFileView(APIView):
     """
     API view for uploading document files into the repository and triggering
     background processing (parsing, chunking, and embedding).
@@ -35,6 +37,13 @@ class RepositoryFileUploadView(APIView):
             self.required_scope = 'mull:read'
         elif self.request.method == 'POST':
             self.required_scope = 'mull:write'
+
+    async def get(self, request, *args, **kwargs):
+        user = request.user
+
+        query = {'user_id': user.id}
+        data = await sync_to_async(get_serialized_data)(query, RepositoryFile, RepositoryFileSerializer, many=True)
+        return Response(data, status=status.HTTP_200_OK)
 
     @extend_schema(
         summary="Upload a document file",
@@ -59,6 +68,7 @@ class RepositoryFileUploadView(APIView):
         responses={202: RepositoryFileSerializer, 400: OpenApiTypes.OBJECT}
     )
     async def post(self, request, project_id, *args, **kwargs):
+        user = request.user
         uploaded_files = request.FILES.getlist('files') or request.FILES.getlist('file')
 
         if not uploaded_files:
@@ -89,27 +99,30 @@ class RepositoryFileUploadView(APIView):
                 file_record = await sync_to_async(self._save_single_file_record)(
                     uploaded_file=uploaded_file,
                     project_id=project_id,
+                    user_id=str(user.id),
                     storage_service=storage_service
                 )
 
-                self._dispatch_background_task(file_record)
+                publish_event.delay(
+                    event_type=ProcessRepositoryFile.name,
+                    payload={
+                        'file_record_id': str(file_record.id),
+                    },
+                    queue=ProcessRepositoryFile.queue
+                )
                 successful_records.append(file_record)
             except Exception as e:
                 failed_files.append({"file_name": filename, "reason": f"Internal error during save: {str(e)}"})
 
         response_data = {
-            "success_count": len(successful_records),
-            "failed_count": len(failed_files),
-            "successful_files": await sync_to_async(instance_to_data)(successful_records, RepositoryFileSerializer, many=True),
-            "failed_files": failed_files
+            "successCount": len(successful_records),
+            "failedCount": len(failed_files),
+            "successfulFiles": await sync_to_async(instance_to_data)(successful_records, RepositoryFileSerializer, many=True),
+            "failedFiles": failed_files
         }
 
         response_status = status.HTTP_202_ACCEPTED if successful_records else status.HTTP_400_BAD_REQUEST
         return Response(response_data, status=response_status)
-
-    @staticmethod
-    def _dispatch_background_task(file_record: RepositoryFile) -> None:
-        process_repository_file_task.delay(str(file_record.id))
 
     def _validate_file(self, uploaded_file, valid_types) -> tuple[bool, str | None]:
         filename = uploaded_file.name
@@ -127,6 +140,7 @@ class RepositoryFileUploadView(APIView):
     def _save_single_file_record(
         self,
         uploaded_file,
+        user_id: str,
         project_id: str,
         storage_service: FileStorageService
     ) -> RepositoryFile:
@@ -136,6 +150,7 @@ class RepositoryFileUploadView(APIView):
 
         with transaction.atomic():
             file_record = RepositoryFile.objects.create(
+                user_id=user_id,
                 project_id=project_id,
                 file_name=filename,
                 file_size=human_readable_size,

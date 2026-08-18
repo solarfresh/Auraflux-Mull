@@ -1,16 +1,21 @@
+import logging
+
 from core.celery_app import celery_app
 from core.constants import ProcessStatus
+from messaging.constants import ProcessRepositoryFile
 from repositories.models import RepositoryFile
-import logging
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task
+@celery_app.task(name=ProcessRepositoryFile.name, ignore_result=True)
 def process_repository_file_task(file_record_id: str):
     """
     Background Celery task to parse, chunk, and embed a repository file.
     """
+    task_id = process_repository_file_task.request.id
+    logger.info(f"Received task {task_id} to process file with ID: {file_record_id}")
+
     try:
         file_record = RepositoryFile.objects.get(id=file_record_id)
 
