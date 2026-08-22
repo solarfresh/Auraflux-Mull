@@ -3,8 +3,7 @@ import logging
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from core.constants import ProcessStatus
-from core.utils import (create_serialized_data, get_serialized_data,
-                        instance_to_data)
+from core.utils import get_serialized_data, instance_to_data
 from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema

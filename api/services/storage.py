@@ -1,5 +1,8 @@
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
+from typing import IO, Generator
+
 from django.conf import settings
 from django.core.files.storage import Storage, default_storage
 from django.core.files.uploadedfile import UploadedFile
@@ -79,3 +82,44 @@ class FileStorageService:
         except Exception as e:
             # Log the error if necessary in your application context
             return False
+
+    def read_file_bytes(self, file_path: str) -> bytes:
+        """
+        Reads and returns the complete binary content of a file from storage.
+        Encapsulates underlying storage access (Local, S3, etc.).
+
+        Args:
+            file_path (str): Relative file path or S3 key.
+
+        Returns:
+            bytes: Raw binary content of the file.
+
+        Raises:
+            FileNotFoundError: If file path is invalid or file doesn't exist.
+        """
+        if not file_path or not self.storage.exists(file_path):
+            raise FileNotFoundError(f"File not found in storage: {file_path}")
+
+        with self.storage.open(file_path, mode="rb") as f:
+            return f.read()
+
+    @contextmanager
+    def get_file_stream(self, file_path: str) -> Generator[IO[bytes], None, None]:
+        """
+        Context manager that yields a file-like stream object.
+        Ensures underlying storage handles/sockets are cleanly closed.
+
+        Args:
+            file_path (str): Relative file path or S3 key.
+
+        Yields:
+            io.BufferedIOBase: Binary file-like stream object.
+        """
+        if not file_path or not self.storage.exists(file_path):
+            raise FileNotFoundError(f"File not found in storage: {file_path}")
+
+        f = self.storage.open(file_path, mode="rb")
+        try:
+            yield f
+        finally:
+            f.close()
