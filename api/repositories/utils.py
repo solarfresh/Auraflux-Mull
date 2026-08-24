@@ -5,7 +5,9 @@ from auraflux_core.rag.chunkers.base import BaseChunker
 from auraflux_core.rag.chunkers.paragraph_chunker import \
     ParagraphDynamicChunker
 from auraflux_core.rag.parsers.txt_parser import TXTParser
+from core.constants import ProcessStatus
 from repositories.constants import SupportedFileType
+from repositories.models import RepositoryFile
 
 logger = logging.getLogger(__name__)
 
@@ -42,3 +44,8 @@ def get_parser_by_file_type(file_type: str):
     #     return DOCXParser()
     else:
         raise ValueError(f"Unsupported SupportedFileType: {file_type}")
+
+def mark_file_status(file_record_id: str, status: ProcessStatus):
+    file_record = RepositoryFile.objects.get(id=file_record_id)
+    file_record.status = status
+    file_record.save(update_fields=['status'])
