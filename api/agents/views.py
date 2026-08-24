@@ -4,7 +4,7 @@ from adrf.views import APIView
 from agents.models import AgentConfig
 from agents.serializers import AgentConfigSerializer
 from asgiref.sync import sync_to_async
-from core.utils import get_serialized_data
+from core.utils import get_serialized_data, update_serialized_data_by_query
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from iam.permissions import HasRequiredScope
 from rest_framework import status
@@ -66,3 +66,44 @@ class AgentConfigListAPIView(APIView):
         )
 
         return Response(data, status=status.HTTP_200_OK)
+
+
+class AgentConfigDetailAPIView(APIView):
+    """
+    Handles updating a specific agent configuration.
+    """
+
+    permission_classes = [HasRequiredScope]
+
+    def get_permissions(self):
+        if self.request.method == 'PUT':
+            self.required_scope = 'mull:write'
+        return super().get_permissions()
+
+    @extend_schema(
+        summary="Update agent configuration",
+        description="Partially update an existing agent configuration.",
+        responses={
+            200: AgentConfigSerializer,
+            400: {"description": "Bad Request - Invalid data"},
+            404: {"description": "Not Found - Agent configuration does not exist"}
+        }
+    )
+    async def put(self, request, project_id, agent_id, *args, **kwargs):
+        request_data = request.data
+
+        try:
+            data = await sync_to_async(update_serialized_data_by_query)(
+                {'id': agent_id, 'project_id': project_id},
+                request_data,
+                AgentConfig,
+                AgentConfigSerializer
+            )
+            return Response(data, status=status.HTTP_200_OK)
+        except AgentConfig.DoesNotExist:
+            return Response(
+                {"detail": "AgentConfig not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)

@@ -61,8 +61,14 @@ class AgentConfig(BaseModel):
 
     provider_id = models.UUIDField(
         default=uuid.uuid4,
-        editable=False,
+        editable=True,
         help_text="The ID of the LLM provider configuration used for this agent."
+    )
+
+    model_family_id = models.UUIDField(
+        default=uuid.uuid4,
+        editable=True,
+        help_text="The ID of the LLM model configuration used for this agent."
     )
 
     project = models.ForeignKey(
