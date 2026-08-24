@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'drf_spectacular_sidecar',
 
     # Local apps
+    'agents.apps.AgentsConfig',
     'messaging.apps.MessagingConfig',
     'projects.apps.ProjectsConfig',
     'repositories.apps.RepositoriesConfig'

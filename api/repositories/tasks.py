@@ -1,8 +1,21 @@
+import json
 import logging
+from typing import Dict, cast
 
+from agents.models import AgentConfig
+from agents.serializers import AgentConfigSerializer
+from auraflux_core.rag.filters.base import FilterPipeline
+from auraflux_core.rag.filters.semantic_filter import (
+    GroundedInEvidenceFilter, SemanticQualityFilter)
+from auraflux_core.rag.filters.static_filter import StaticRuleFilter
+from auraflux_core.rag.schemas.chunker import (ChunkAlignment, ChunkConcept,
+                                               ChunkKeywords, StandardChunk)
 from core.celery_app import celery_app
 from core.constants import ProcessStatus
-from messaging.constants import ProcessRepositoryChunk, ProcessRepositoryFile
+from core.utils import get_serialized_data
+from messaging.constants import (AgentRequest, ProcessConceptSynthesis,
+                                 ProcessRepositoryChunk, ProcessRepositoryFile,
+                                 ProcessTriplesExtractor)
 from messaging.tasks import publish_event
 from repositories.models import RepositoryFile
 from repositories.utils import get_chunker, get_parser_by_file_type
@@ -11,15 +24,93 @@ from services.storage import FileStorageService
 logger = logging.getLogger(__name__)
 
 
+def process_concept_synthesis_task(event_type: str, payload: dict):
+    task_id = process_concept_synthesis_task.request.id
+    file_record_id = payload.get('file_record_id')
+    chunk_payload = payload.get('chunk_payload')
+    agent_output = payload.get('agent_output', {})
+
+    json_object = json.loads(agent_output.content)
+    chunk = StandardChunk.model_validate_json(chunk_payload)
+    chunk.alignment = ChunkAlignment(**json_object['alignment'])
+    chunk.concept = ChunkConcept(**json_object['concept'])
+
+    # TODO: 1. Update database
+    # TODO: 2. Call the embedding model
+    # TODO: 3. Write to vector database (OpenSearch / Pinecone)
+
+
+def process_triples_extractor_task(event_type: str, payload: dict):
+    task_id = process_triples_extractor_task.request.id
+    file_record_id = payload.get('file_record_id')
+    chunk_payload = payload.get('chunk_payload')
+    agent_output = payload.get('agent_output', {})
+
+    chunk = StandardChunk.model_validate_json(chunk_payload)
+    chunk.keywords = ChunkKeywords.model_validate_json(agent_output.content)
+
+    semantic_filter_pipeline = FilterPipeline()
+    semantic_filter_pipeline.add_filter(GroundedInEvidenceFilter())
+    semantic_filter_pipeline.add_filter(SemanticQualityFilter())
+
+    if not semantic_filter_pipeline.process_item(chunk):
+        return
+
+    agent_payload = payload.copy()
+    next_event_payload = agent_payload | {
+        'file_record_id': file_record_id,
+        'chunk_payload': chunk.model_dump_json()
+    }
+    agent_payload |= {
+        'agent_input_data': {
+            'excerpt_text': chunk.evidence.excerpt_text,
+        },
+        'next_event_type': ProcessConceptSynthesis.name,
+        'next_event_payload': next_event_payload,
+        'next_event_queue': ProcessConceptSynthesis.queue,
+    }
+
+    publish_event.delay(
+        event_type=AgentRequest.name,
+        payload=agent_payload,
+        queue=AgentRequest.queue
+    )
+
+
 @celery_app.task(name=ProcessRepositoryChunk.name, ignore_result=True)
 def process_repository_chunk_task(event_type: str, payload: dict):
     task_id = process_repository_chunk_task.request.id
     file_record_id = payload.get('file_record_id')
     chunk_payload = payload.get('chunk_payload')
 
-    # TODO: 3. Perform text chunking and call the embedding model
-    # TODO: 4. Write to vector database (OpenSearch / Pinecone)
+    chunk = StandardChunk.model_validate_json(chunk_payload)
 
+    agent_config = cast(Dict, get_serialized_data(
+        query={'role': 'ExtractKeywordsAgent'},
+        model_class=AgentConfig,
+        serializer_class=AgentConfigSerializer,
+        many=False
+    ))
+
+    agent_payload = agent_config.copy()
+    next_event_payload = agent_payload | {
+        'file_record_id': file_record_id,
+        'chunk_payload': chunk_payload
+    }
+    agent_payload |= {
+        'agent_input_data': {
+            'excerpt_text': chunk.evidence.excerpt_text,
+        },
+        'next_event_type': ProcessTriplesExtractor.name,
+        'next_event_payload': next_event_payload,
+        'next_event_queue': ProcessTriplesExtractor.queue,
+    }
+
+    publish_event.delay(
+        event_type=AgentRequest.name,
+        payload=agent_payload,
+        queue=AgentRequest.queue
+    )
 
 @celery_app.task(name=ProcessRepositoryFile.name, ignore_result=True)
 def process_repository_file_task(event_type: str, payload: dict):
@@ -28,6 +119,7 @@ def process_repository_file_task(event_type: str, payload: dict):
     """
     task_id = process_repository_file_task.request.id
     file_record_id = payload.get('file_record_id')
+    static_rule_filter = StaticRuleFilter()
     logger.info(f"Received task {task_id} to process file with ID: {file_record_id}")
 
     try:
@@ -57,6 +149,9 @@ def process_repository_file_task(event_type: str, payload: dict):
         logger.info(f"Generated {len(chunks)} chunks for file: {file_record.file_name}")
 
         for chunk in chunks:
+            if not static_rule_filter.passes(chunk):
+                continue
+
             publish_event.delay(
                 event_type=ProcessRepositoryChunk.name,
                 payload={
