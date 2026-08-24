@@ -5,6 +5,7 @@ from django.db import transaction
 
 TRIPLES_EXTRACTOR_CONFIG = {
     "role": "ExtractKeywordsAgent",
+    "purpose": "Extracts bound semantic triples and exact keywords/entities from raw document text",
     "system_prompt": (
         "You are an expert Information Extraction Agent specializing in Knowledge Graph construction and Document Analysis.\n"
         "Your task is to analyze the provided raw document chunk text and extract structured key information: Bound Semantic Triples and Exact Keywords/Entities.\n\n"
@@ -78,6 +79,7 @@ TRIPLES_EXTRACTOR_CONFIG = {
 
 SYNTHESIZE_CONCEPT_CONFIG = {
     "role": "SynthesizeConceptAgent",
+    "purpose": "Synthesizes high-level conceptual abstractions and strategic alignment from raw document text",
     "system_prompt": (
         "You are an expert Strategic Knowledge Architect specializing in enterprise decision analysis and high-level knowledge synthesis.\n"
         "Your task is to analyze a raw document chunk text and perform high-level semantic abstraction to construct two layers of structured knowledge: Abstraction Layer (`concept`) and Alignment & Scope Layer (`alignment`).\n\n"
@@ -197,6 +199,7 @@ class Command(BaseCommand):
             config_obj, created = DefaultAgentConfig.objects.update_or_create(
                 role=role_name,
                 defaults={
+                    "purpose": config_data["purpose"],
                     "system_prompt": config_data["system_prompt"],
                     "prompt_template": config_data["prompt_template"],
                     "template_variables": config_data["template_variables"],

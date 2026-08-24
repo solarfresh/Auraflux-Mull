@@ -7,6 +7,7 @@ class AgentConfigSerializer(ModelSerializer):
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
     name = serializers.CharField(required=False, allow_blank=True)
+    purpose = serializers.CharField(required=False, allow_blank=True)
     role = serializers.CharField(required=False, allow_blank=True)
     systemPrompt = serializers.CharField(source='system_prompt', required=False, allow_blank=True)
     promptTemplate = serializers.CharField(source='prompt_template', required=False, allow_blank=True)
@@ -21,6 +22,7 @@ class AgentConfigSerializer(ModelSerializer):
             'createdAt',
             'updatedAt',
             'name',
+            'purpose',
             'role',
             'systemPrompt',
             'promptTemplate',

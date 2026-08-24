@@ -1,5 +1,7 @@
+import re
+
+from agents.models import AgentConfig, DefaultAgentConfig
 from django.db import transaction
-from agents.models import DefaultAgentConfig, AgentConfig
 
 
 class AgentService:
@@ -20,7 +22,8 @@ class AgentService:
                 project_id=project_id,
                 role=default_cfg.role,
                 defaults={
-                    "name": "New Agent",
+                    "name": re.sub(r"(?<!^)(?=[A-Z])", " ", default_cfg.role),
+                    "purpose": default_cfg.purpose,
                     "system_prompt": default_cfg.system_prompt,
                     "prompt_template": default_cfg.prompt_template,
                     "template_variables": default_cfg.template_variables,

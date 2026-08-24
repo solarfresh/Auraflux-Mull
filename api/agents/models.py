@@ -14,6 +14,10 @@ class AgentConfig(BaseModel):
         max_length=100,
     )
 
+    purpose = models.TextField(
+        help_text="A brief description of the agent's purpose and intended use case."
+    )
+
     role = models.CharField(
         max_length=100,
         help_text="The unique name used to identify this agent role (e.g., 'Dichotomy Suggester')."
@@ -86,6 +90,10 @@ class DefaultAgentConfig(BaseModel):
     """
     Defines the default role, behavior, and LLM parameters for an agent type
     """
+    purpose = models.TextField(
+        help_text="A brief description of the agent's purpose and intended use case."
+    )
+
     role = models.CharField(
         max_length=100,
         unique=True,
