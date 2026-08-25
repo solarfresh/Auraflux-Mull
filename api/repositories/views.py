@@ -41,7 +41,13 @@ class RepositoryFileView(APIView):
         user = request.user
 
         query = {'user_id': user.id}
-        data = await sync_to_async(get_serialized_data)(query, RepositoryFile, RepositoryFileSerializer, many=True)
+        data = await sync_to_async(get_serialized_data)(
+            query,
+            RepositoryFile,
+            RepositoryFileSerializer,
+            prefetch_related=['chunks'],
+            many=True
+        )
         return Response(data, status=status.HTTP_200_OK)
 
     @extend_schema(

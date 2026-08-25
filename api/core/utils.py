@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
 from django.conf import settings
@@ -17,11 +17,26 @@ def delete_instance_by_query(query: Dict, model_class):
     instance = model_class.objects.get(**query)
     instance.delete()
 
-def get_serialized_data(query: Dict, model_class, serializer_class, many=True):
-    if (many):
-        instances = model_class.objects.filter(**query).all()
+def get_serialized_data(
+    query: Dict,
+    model_class,
+    serializer_class,
+    many: bool = True,
+    prefetch_related: Optional[List[Union[str, object]]] = None,
+    select_related: Optional[List[str]] = None
+):
+    queryset = model_class.objects.filter(**query)
+
+    if prefetch_related:
+        queryset = queryset.prefetch_related(*prefetch_related)
+
+    if select_related:
+        queryset = queryset.select_related(*select_related)
+
+    if many:
+        instances = queryset.all()
     else:
-        instances = model_class.objects.filter(**query).get()
+        instances = queryset.get()
 
     serializer = serializer_class(instances, many=many)
     return serializer.data
