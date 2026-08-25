@@ -1,15 +1,16 @@
 import logging
 
 from adrf.views import APIView
+from agents.services import AgentService
 from asgiref.sync import sync_to_async
+from core.utils import create_serialized_data, get_serialized_data
 from drf_spectacular.utils import (OpenApiParameter, OpenApiResponse,
                                    extend_schema)
+from iam.permissions import HasRequiredScope
 from projects.models import Project
 from projects.serializers import ProjectSerializer
 from rest_framework import status
 from rest_framework.response import Response
-from core.utils import get_serialized_data, create_serialized_data
-from iam.permissions import HasRequiredScope
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,10 @@ class ProjectListCreateAPIView(APIView):
         responses={200: ProjectSerializer(many=True)}
     )
     async def get(self, request, *args, **kwargs):
+        user = request.user
         tag_filter = request.query_params.get('tag')
 
-        query = {}
+        query = {'user_id': user.id}
         if tag_filter:
             # Filter the JSONField array for the specific tag
             query['tags__contains'] = [tag_filter]
@@ -61,8 +63,12 @@ class ProjectListCreateAPIView(APIView):
         }
     )
     async def post(self, request, *args, **kwargs):
+        user = request.user
+        payload = request.data
+
         try:
-            data = await sync_to_async(create_serialized_data)(request.data, ProjectSerializer)
+            data = await sync_to_async(create_serialized_data)(payload, ProjectSerializer, user_id=str(user.id))
+            await sync_to_async(AgentService.initialize_default_agents_for_project)(data.get('id'))
         except ValueError as errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 

@@ -35,6 +35,8 @@ INSTALLED_APPS = [
     'drf_spectacular_sidecar',
 
     # Local apps
+    'agents.apps.AgentsConfig',
+    'messaging.apps.MessagingConfig',
     'projects.apps.ProjectsConfig',
     'repositories.apps.RepositoriesConfig'
     # 'users.apps.UsersConfig',
@@ -159,6 +161,23 @@ CELERY = {
     'backend': os.getenv(
         'CELERY_BACKEND', 'redis://127.0.0.1:6379/0'
     )
+}
+
+MEDIA_URL = '/storage/'
+MEDIA_ROOT = BASE_DIR / 'storage'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        # "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        # "OPTIONS": {
+        #     "bucket_name": "my-company-repository-bucket",
+        #     "region_name": "ap-northeast-1",
+        # },
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
 }
 
 # The cache key prefix ensures our search results don't conflict with other cache uses.

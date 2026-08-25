@@ -1,3 +1,4 @@
+import uuid
 from typing import TYPE_CHECKING
 
 from core.constants import ProcessStatus
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
 
 class RepositoryFile(BaseModel):
     """
-    Repository Document Entity (對應 RepositoryFile 與 FileItem)
+    Repository Document Entity
     """
     file_name = models.CharField(
         max_length=255,
@@ -33,6 +34,30 @@ class RepositoryFile(BaseModel):
         default=ProcessStatus.IDLE,
         help_text="Processing status of the file"
     )
+    file_path = models.CharField(
+        max_length=512,
+        blank=True,
+        null=True,
+        help_text="Relative path or S3 key of the stored file."
+    )
+    storage_type = models.CharField(
+        max_length=52,
+        default="local",
+        help_text="Storage backend type used for this file."
+    )
+
+    user_id = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        help_text="The ID of the user owning this file."
+    )
+
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.CASCADE,
+        related_name='project',
+        help_text="Foreign key to the associated project."
+    )
 
     if TYPE_CHECKING:
         chunks: RelatedManager['ChunkData']
@@ -46,6 +71,17 @@ class RepositoryFile(BaseModel):
     @property
     def chunk_count(self) -> int:
         return self.chunks.count()
+
+    @property
+    def file_url(self) -> str | None:
+        """
+        Dynamic helper to get the accessible URL based on current storage provider.
+        """
+        if not self.file_path:
+            return None
+
+        from django.core.files.storage import default_storage
+        return default_storage.url(self.file_path)
 
     def __str__(self):
         return f"{self.file_name} ({self.id})"

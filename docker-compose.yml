@@ -17,7 +17,7 @@ services:
     networks:
       - auraflux_network
 
-  worker_auth:
+  worker_mull:
     <<: *backend
     container_name: auraflux_worker_mull
     env_file:
@@ -26,7 +26,7 @@ services:
     ports: []
     volumes:
       - ./api:/api
-    command: celery -A core.celery_app:celery_app worker -Q celery,default -c 2 -l info
+    command: celery -A core.celery_app:celery_app worker -Q celery,mull -c 2 -l info
     networks:
       - auraflux_network
 
