@@ -115,6 +115,7 @@ class ChunkDataSerializer(ModelSerializer):
     Validates and maps nested JSON structures into JSONFields.
     Mapped to `ChunkData` TypeScript interface.
     """
+    fileId = serializers.UUIDField(source='file_id')
     alignment = ChunkAlignmentSerializer(
         help_text="Layer 1: Alignment & Scope"
     )
@@ -127,18 +128,28 @@ class ChunkDataSerializer(ModelSerializer):
     evidence = ChunkEvidenceSerializer(
         help_text="Layer 4: Raw Fact & Evidence"
     )
+    createdAt = serializers.DateTimeField(
+        source='created_at',
+        read_only=True,
+        help_text="The timestamp when the project was created"
+    )
+    updatedAt = serializers.DateTimeField(
+        source='updated_at',
+        read_only=True,
+        help_text="The timestamp when the project was last updated"
+    )
 
     class Meta:
         model = ChunkData
         fields = [
             'id',
-            'file',
+            'fileId',
             'alignment',
             'concept',
             'keywords',
             'evidence',
-            'created_at',
-            'updated_at',
+            'createdAt',
+            'updatedAt',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 

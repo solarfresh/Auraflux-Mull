@@ -38,15 +38,20 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
         logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
         return
 
-    json_object = json.loads(agent_output.content)
+    json_object = json.loads(agent_output)
     chunk = StandardChunk.model_validate_json(chunk_payload)
     chunk.alignment = ChunkAlignment(**json_object['alignment'])
     chunk.concept = ChunkConcept(**json_object['concept'])
 
+    chunk_data = chunk.model_dump(
+        mode="json",
+        exclude={'id', 'fileId'}
+    )
+    chunk_data['fileId'] = file_id
+
     create_serialized_data(
-        chunk.model_dump_json(),
-        ChunkDataSerializer,
-        file_id=file_id
+        chunk_data,
+        ChunkDataSerializer
     )
 
     # TODO: 2. Call the embedding model
@@ -69,7 +74,7 @@ def process_triples_extractor_task(event_type: str, payload: dict):
         return
 
     chunk = StandardChunk.model_validate_json(chunk_payload)
-    chunk.keywords = ChunkKeywords.model_validate_json(agent_output.content)
+    chunk.keywords = ChunkKeywords.model_validate_json(agent_output)
 
     semantic_filter_pipeline = FilterPipeline()
     semantic_filter_pipeline.add_filter(GroundedInEvidenceFilter())
@@ -83,14 +88,31 @@ def process_triples_extractor_task(event_type: str, payload: dict):
 
         return
 
-    agent_payload = payload.copy()
+    agent_config = cast(Dict, get_serialized_data(
+        query={'role': 'SynthesizeConceptAgent'},
+        model_class=AgentConfig,
+        serializer_class=AgentConfigSerializer,
+        many=False
+    ))
+
+    agent_payload = {
+        'provider_id': agent_config.get('providerId', None),
+        'agent_name': agent_config.get('name', None),
+        'agent_role': agent_config.get('role', None),
+        'system_prompt': agent_config.get('systemPrompt', None),
+        'llm_parameters': agent_config.get('llmParameters', None),
+        'prompt_template': agent_config.get('promptTemplate', None),
+        'template_variables': agent_config.get('templateVariables', None),
+        'output_format': agent_config.get('outputFormat', None),
+    }
+
     next_event_payload = agent_payload | {
         'file_id': file_id,
         'chunk_payload': chunk.model_dump_json()
     }
     agent_payload |= {
         'agent_input_data': {
-            'excerpt_text': chunk.evidence.excerpt_text,
+            'excerpt_text': chunk.evidence.excerptText,
         },
         'next_event_type': ProcessConceptSynthesis.name,
         'next_event_payload': next_event_payload,
@@ -119,14 +141,24 @@ def process_repository_chunk_task(event_type: str, payload: dict):
         many=False
     ))
 
-    agent_payload = agent_config.copy()
+    agent_payload = {
+        'provider_id': agent_config.get('providerId', None),
+        'agent_name': agent_config.get('name', None),
+        'agent_role': agent_config.get('role', None),
+        'system_prompt': agent_config.get('systemPrompt', None),
+        'llm_parameters': agent_config.get('llmParameters', None),
+        'prompt_template': agent_config.get('promptTemplate', None),
+        'template_variables': agent_config.get('templateVariables', None),
+        'output_format': agent_config.get('outputFormat', None),
+    }
+
     next_event_payload = agent_payload | {
         'file_id': file_id,
         'chunk_payload': chunk_payload
     }
     agent_payload |= {
         'agent_input_data': {
-            'excerpt_text': chunk.evidence.excerpt_text,
+            'excerpt_text': chunk.evidence.excerptText,
         },
         'next_event_type': ProcessTriplesExtractor.name,
         'next_event_payload': next_event_payload,

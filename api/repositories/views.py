@@ -105,7 +105,7 @@ class RepositoryFileView(APIView):
                 publish_event.delay(
                     event_type=ProcessRepositoryFile.name,
                     payload={
-                        'file_record_id': str(file_record.id),
+                        'file_id': str(file_record.id),
                     },
                     queue=ProcessRepositoryFile.queue
                 )
