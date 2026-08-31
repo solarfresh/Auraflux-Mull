@@ -4,6 +4,7 @@ Provides schemas, factories, and services for performing query, bulk indexing,
 and document deletion operations against OpenSearch.
 """
 
+from .client import get_opensearch_client
 from .schemas import (
     OpenSearchCreateIndexSchema,
     OpenSearchDeleteSchema,
@@ -14,6 +15,7 @@ from .schemas import (
 from .service import OpenSearchService
 
 __all__ = [
+    "get_opensearch_client",
     # Schemas & Factory
     "OpenSearchSearchSchema",
     "OpenSearchCreateIndexSchema",

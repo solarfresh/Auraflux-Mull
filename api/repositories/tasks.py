@@ -20,7 +20,7 @@ from messaging.tasks import publish_event
 from repositories.models import RepositoryFile
 from repositories.serializers import ChunkDataSerializer
 from repositories.utils import (get_chunker, get_parser_by_file_type,
-                                mark_file_status)
+                                mark_file_status, sync_chunk_to_opensearch)
 from services.semaphore import get_raw_redis_client
 from services.storage import FileStorageService
 
@@ -31,8 +31,12 @@ logger = logging.getLogger(__name__)
 def process_concept_synthesis_task(event_type: str, payload: dict):
     task_id = process_concept_synthesis_task.request.id
     file_id = payload.get('file_id')
-    chunk_payload = payload.get('chunk_payload')
+    chunk_payload = payload.get('chunk_payload', None)
     agent_output = payload.get('agent_output', {})
+
+    if chunk_payload is None:
+        logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        return
 
     if file_id is None:
         logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
@@ -54,8 +58,25 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
         ChunkDataSerializer
     )
 
-    # TODO: 2. Call the embedding model
-    # TODO: 3. Write to vector database (OpenSearch / Pinecone)
+    # ------------------------------------------------------------------
+    # TODO 2: Call the embedding model (假設產出的 vectors 結構如下)
+    # ------------------------------------------------------------------
+    # question_vector = embedding_service.embed(chunk.question)
+    # concept_vector = embedding_service.embed(chunk.concept.summary)
+    # evidence_vector = embedding_service.embed(chunk.evidence)
+    question_vector = [0.1] * 1536  # 模擬資料
+    concept_vector = [0.1] * 1536
+    evidence_vector = [0.1] * 1536
+
+    # Write to vector database (OpenSearch)
+    sync_chunk_to_opensearch(
+        file_id=file_id,
+        chunk_id=chunk.id,
+        chunk_data=chunk_data,
+        question_vector=question_vector,
+        concept_vector=concept_vector,
+        evidence_vector=evidence_vector,
+    )
 
     redis_client = get_raw_redis_client("default")
     remaining = redis_client.decr(f"file:{file_id}:pending_chunks")
@@ -68,6 +89,10 @@ def process_triples_extractor_task(event_type: str, payload: dict):
     file_id = payload.get('file_id')
     chunk_payload = payload.get('chunk_payload')
     agent_output = payload.get('agent_output', {})
+
+    if chunk_payload is None:
+        logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        return
 
     if file_id is None:
         logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
@@ -131,6 +156,10 @@ def process_repository_chunk_task(event_type: str, payload: dict):
     task_id = process_repository_chunk_task.request.id
     file_id = payload.get('file_id')
     chunk_payload = payload.get('chunk_payload')
+
+    if chunk_payload is None:
+        logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        return
 
     chunk = StandardChunk.model_validate_json(chunk_payload)
 
