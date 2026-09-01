@@ -36,6 +36,7 @@ INSTALLED_APPS = [
 
     # Local apps
     'agents.apps.AgentsConfig',
+    'embeddings.apps.EmbeddingsConfig',
     'messaging.apps.MessagingConfig',
     'projects.apps.ProjectsConfig',
     'repositories.apps.RepositoriesConfig'
