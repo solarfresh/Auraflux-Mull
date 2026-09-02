@@ -13,6 +13,11 @@ class EmbeddingConfig(BaseModel):
         help_text="The display name for this embedding configuration."
     )
 
+    role = models.CharField(
+        max_length=50,
+        help_text="The role or purpose of this embedding configuration (e.g., 'search', 'recommendation')."
+    )
+
     provider_id = models.UUIDField(
         default=uuid.uuid4,
         editable=True,
@@ -41,6 +46,12 @@ class EmbeddingConfig(BaseModel):
     class Meta:
         verbose_name = "Embedding Configuration"
         verbose_name_plural = "Embedding Configurations"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['project', 'role'],
+                name='unique_embedding_role_per_project'
+            )
+        ]
 
     def __str__(self):
         return self.name
@@ -57,22 +68,10 @@ class DefaultEmbeddingConfig(BaseModel):
         help_text="The display name for the default embedding configuration."
     )
 
-    provider_id = models.UUIDField(
-        default=uuid.uuid4,
-        editable=True,
-        help_text="The default provider ID for embeddings."
-    )
-
-    model_family_id = models.UUIDField(
-        default=uuid.uuid4,
-        editable=True,
-        help_text="The default model family ID for embeddings."
-    )
-
-    parameters = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="Default runtime parameters for embedding processing."
+    role = models.CharField(
+        max_length=50,
+        unique=True,
+        help_text="Unique identifier for the embedding role (e.g., 'default_search', 'code_retrieval')."
     )
 
     class Meta:
