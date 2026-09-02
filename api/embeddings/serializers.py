@@ -10,6 +10,7 @@ class EmbeddingConfigSerializer(ModelSerializer):
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
     name = serializers.CharField(required=False, allow_blank=True)
+    role = serializers.CharField(read_only=True)
     parameters = serializers.JSONField(default=dict, required=False)
 
     class Meta:
@@ -22,6 +23,7 @@ class EmbeddingConfigSerializer(ModelSerializer):
             'createdAt',
             'updatedAt',
             'name',
+            'role',
             'parameters',
         )
-        read_only_fields = ('id', 'createdAt', 'updatedAt')
+        read_only_fields = ('id', 'role', 'createdAt', 'updatedAt')
