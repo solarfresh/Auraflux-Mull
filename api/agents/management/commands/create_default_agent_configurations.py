@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 TRIPLES_EXTRACTOR_CONFIG = {
+    "name": "Extract Keywords Agent",
     "role": "ExtractKeywordsAgent",
     "purpose": "Extracts bound semantic triples and exact keywords/entities from raw document text",
     "system_prompt": (
@@ -78,6 +79,7 @@ TRIPLES_EXTRACTOR_CONFIG = {
 }
 
 SYNTHESIZE_CONCEPT_CONFIG = {
+    "name": "Synthesize Concept Agent",
     "role": "SynthesizeConceptAgent",
     "purpose": "Synthesizes high-level conceptual abstractions and strategic alignment from raw document text",
     "system_prompt": (

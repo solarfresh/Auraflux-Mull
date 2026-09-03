@@ -36,6 +36,7 @@ INSTALLED_APPS = [
 
     # Local apps
     'agents.apps.AgentsConfig',
+    'embeddings.apps.EmbeddingsConfig',
     'messaging.apps.MessagingConfig',
     'projects.apps.ProjectsConfig',
     'repositories.apps.RepositoriesConfig'
@@ -92,8 +93,10 @@ LOGGING = {
         },
         'logfile': {
             'level': 'INFO',
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.RotatingFileHandler',
             'filename': '/auraflux/logs/default.log',
+            'maxBytes': 1024 * 1024 * 10,
+            'backupCount': 5,
             'formatter': 'verbose',
         },
     },
@@ -104,7 +107,8 @@ LOGGING = {
         },
         'default': {
             'handlers': ['console', 'logfile'],
-            'level': 'INFO'
+            'level': 'INFO',
+            'propagate': False,
         },
     },
 }
@@ -137,6 +141,23 @@ DATABASES = {
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
+}
+
+OPENSEARCH = {
+    'HOSTS': [
+        host.strip()
+        for host in os.environ.get('OPENSEARCH_HOSTS', 'http://localhost:9200').split(',')
+        if host.strip()
+    ],
+    'AUTH': (
+        os.environ.get('OPENSEARCH_USER', 'admin'),
+        os.environ.get('OPENSEARCH_PASSWORD', 'admin')
+    ),
+    'USE_SSL': os.environ.get('OPENSEARCH_USE_SSL', 'false').lower() in ('true', '1', 'yes'),
+    'VERIFY_CERTS': os.environ.get('OPENSEARCH_VERIFY_CERTS', 'false').lower() in ('true', '1', 'yes'),
+    'MAX_CONNECTIONS': int(os.environ.get('OPENSEARCH_MAX_CONNECTIONS', '20')),
+    'TIMEOUT': int(os.environ.get('OPENSEARCH_TIMEOUT', '30')),
+    'MAX_RETRIES': int(os.environ.get('OPENSEARCH_MAX_RETRIES', '3')),
 }
 
 CACHES = {

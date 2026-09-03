@@ -8,6 +8,11 @@ class AgentRequest:
     queue = Queue.AGENT
 
 
+class EmbeddingRequest:
+    name = "handle_embedding_request"
+    queue = Queue.AGENT
+
+
 class ProcessConceptSynthesis:
     name = "process_concept_synthesis_task"
     queue = Queue.MULL
@@ -25,4 +30,9 @@ class ProcessRepositoryFile:
 
 class ProcessTriplesExtractor:
     name = "process_triples_extractor_task"
+    queue = Queue.MULL
+
+
+class ProcessVectorStorage:
+    name = "process_vector_storage_task"
     queue = Queue.MULL

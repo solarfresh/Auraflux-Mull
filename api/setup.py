@@ -11,6 +11,7 @@ import shutil
 # models, services, and utilities.
 PACKAGE_LIST = [
     'agents',
+    'embeddings',
     'messaging',
     'projects',
     'repositories',

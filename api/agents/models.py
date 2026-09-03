@@ -100,6 +100,10 @@ class DefaultAgentConfig(BaseModel):
         help_text="A brief description of the agent's purpose and intended use case."
     )
 
+    name = models.CharField(
+        max_length=100,
+    )
+
     role = models.CharField(
         max_length=100,
         unique=True,

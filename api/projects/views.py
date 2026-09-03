@@ -1,7 +1,7 @@
 import logging
 
 from adrf.views import APIView
-from agents.services import AgentService
+from projects.utils import initialize_project_defaults
 from asgiref.sync import sync_to_async
 from core.utils import create_serialized_data, get_serialized_data
 from drf_spectacular.utils import (OpenApiParameter, OpenApiResponse,
@@ -68,9 +68,8 @@ class ProjectListCreateAPIView(APIView):
 
         try:
             data = await sync_to_async(create_serialized_data)(payload, ProjectSerializer, user_id=str(user.id))
-            await sync_to_async(AgentService.initialize_default_agents_for_project)(data.get('id'))
+            await sync_to_async(initialize_project_defaults)(data.get('id'))
         except ValueError as errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(data, status=status.HTTP_201_CREATED)
-
