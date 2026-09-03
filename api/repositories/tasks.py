@@ -10,6 +10,7 @@ from auraflux_core.rag.filters.semantic_filter import (
 from auraflux_core.rag.filters.static_filter import StaticRuleFilter
 from auraflux_core.rag.schemas.chunker import (ChunkAlignment, ChunkConcept,
                                                ChunkKeywords, StandardChunk)
+from celery.exceptions import MaxRetriesExceededError
 from core.celery_app import celery_app
 from core.constants import ProcessStatus
 from core.utils import create_serialized_data, get_serialized_data
@@ -128,13 +129,18 @@ def process_triples_extractor_task(event_type: str, payload: dict):
     agent_output = payload.get('agent_output', {})
     redis_client = get_raw_redis_client("default")
 
+    if file_id is None:
+        logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
+        return
+
     if chunk_payload is None:
         logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
-    if file_id is None:
-        logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
+    if agent_output is None:
+        logger.error(f"Task {task_id} missing 'agent_output' in payload: {payload}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
@@ -199,47 +205,46 @@ def process_vector_storage_task(event_type: str, payload: dict):
     embedding_output = payload.get('embedding_output', [])
     redis_client = get_raw_redis_client("default")
 
-    # 1. Basic validation
-    if chunk_payload is None:
-        logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
-        redis_client.decr(f"file:{file_id}:pending_chunks")
-        return
-
     if file_id is None:
         logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
+        return
+
+    if chunk_payload is None:
+        logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
-    # Validate output vector completeness to prevent IndexError
     if not isinstance(embedding_output, list) or len(embedding_output) < 3:
         logger.error(f"Task {task_id} received incomplete embedding_output: {embedding_output}")
         mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
-    # Extract vectors safely
     question_vector = embedding_output[0]
     concept_vector = embedding_output[1]
     evidence_vector = embedding_output[2]
 
-    # 2. Parse chunk and build standard JSON structure
-    chunk = StandardChunk.model_validate_json(chunk_payload)
-
-    chunk_data = chunk.model_dump(
-        mode="json",
-        exclude={'id', 'fileId'}
-    )
-    chunk_data['fileId'] = file_id
+    try:
+        chunk = StandardChunk.model_validate_json(chunk_payload)
+        chunk_data = chunk.model_dump(
+            mode="json",
+            exclude={'id', 'fileId'}
+        )
+        chunk_data['fileId'] = file_id
+    except Exception as e:
+        logger.error(f"Task {task_id} failed to parse StandardChunk payload: {e}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
 
     try:
-        # 3. Database operation inside atomic transaction
         with transaction.atomic():
             create_serialized_data(
                 chunk_data,
                 ChunkDataSerializer
             )
 
-        # 4. External Vector DB syncing outside DB transaction
         sync_chunk_to_opensearch(
             file_id=file_id,
             chunk_id=chunk.id,
@@ -249,7 +254,6 @@ def process_vector_storage_task(event_type: str, payload: dict):
             evidence_vector=evidence_vector,
         )
 
-        # 5. Non-relational Redis operations outside DB transaction
         remaining = redis_client.decr(f"file:{file_id}:pending_chunks")
         if remaining == 0:
             mark_file_status(file_id, ProcessStatus.SUCCESS)
@@ -258,42 +262,63 @@ def process_vector_storage_task(event_type: str, payload: dict):
         logger.error(f"Task {task_id} failed during vector storage processing: {str(e)}", exc_info=True)
         mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
-        raise e
+        return
 
 @celery_app.task(name=ProcessRepositoryChunk.name, ignore_result=True)
 def process_repository_chunk_task(event_type: str, payload: dict):
     task_id = process_repository_chunk_task.request.id
     file_id = payload.get('file_id')
     chunk_payload = payload.get('chunk_payload')
+    redis_client = get_raw_redis_client("default")
+
+    if file_id is None:
+        logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
+        return
 
     if chunk_payload is None:
         logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
-    chunk = StandardChunk.model_validate_json(chunk_payload)
+    try:
+        chunk = StandardChunk.model_validate_json(chunk_payload)
+    except Exception as e:
+        logger.error(f"Task {task_id} failed to parse StandardChunk payload: {e}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
 
-    agent_config = cast(Dict, get_serialized_data(
-        query={'role': 'ExtractKeywordsAgent'},
-        model_class=AgentConfig,
-        serializer_class=AgentConfigSerializer,
-        many=False
-    ))
+    try:
+        agent_config = cast(Dict, get_serialized_data(
+            query={'role': 'ExtractKeywordsAgent'},
+            model_class=AgentConfig,
+            serializer_class=AgentConfigSerializer,
+            many=False
+        ))
+    except AgentConfig.DoesNotExist:
+        logger.error(f"Task {task_id}: AgentConfig with role 'ExtractKeywordsAgent' not found.")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
 
+    provider_id = agent_config.get('providerId')
     agent_payload = {
-        'provider_id': agent_config.get('providerId', None),
-        'agent_name': agent_config.get('name', None),
-        'agent_role': agent_config.get('role', None),
-        'system_prompt': agent_config.get('systemPrompt', None),
-        'llm_parameters': agent_config.get('llmParameters', None),
-        'prompt_template': agent_config.get('promptTemplate', None),
-        'template_variables': agent_config.get('templateVariables', None),
-        'output_format': agent_config.get('outputFormat', None),
+        'provider_id': str(provider_id) if provider_id else None,
+        'agent_name': agent_config.get('name', ''),
+        'agent_role': agent_config.get('role', ''),
+        'system_prompt': agent_config.get('systemPrompt', ''),
+        'llm_parameters': agent_config.get('llmParameters', {}),
+        'prompt_template': agent_config.get('promptTemplate', ''),
+        'template_variables': agent_config.get('templateVariables', {}),
+        'output_format': agent_config.get('outputFormat', {}),
     }
 
     next_event_payload = agent_payload | {
         'file_id': file_id,
         'chunk_payload': chunk_payload
     }
+
     agent_payload |= {
         'agent_input_data': {
             'excerpt_text': chunk.evidence.excerptText,
@@ -309,32 +334,36 @@ def process_repository_chunk_task(event_type: str, payload: dict):
         queue=AgentRequest.queue
     )
 
-@celery_app.task(name=ProcessRepositoryFile.name, ignore_result=True)
-def process_repository_file_task(event_type: str, payload: dict):
+@celery_app.task(
+    name=ProcessRepositoryFile.name,
+    ignore_result=True,
+    bind=True,
+    max_retries=3
+)
+def process_repository_file_task(self, event_type: str, payload: dict):
     """
-    Background Celery task to parse, chunk, and embed a repository file.
+    Background Celery task to parse, chunk, and dispatch repository file tasks.
     """
-    task_id = process_repository_file_task.request.id
-    file_id = payload.get('file_id', None)
+    task_id = self.request.id
+    file_id = payload.get('file_id')
     static_rule_filter = StaticRuleFilter()
-    logger.info(f"Received task {task_id} to process file with ID: {file_id}")
 
     if file_id is None:
         logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
         return
 
+    logger.info(f"Received task {task_id} to process file with ID: {file_id}")
+
     try:
         file_record = RepositoryFile.objects.get(id=file_id)
+        mark_file_status(file_id, ProcessStatus.PROCESSING)
 
-        file_record.status = ProcessStatus.PROCESSING
-        file_record.save(update_fields=['status'])
+        if not file_record.file_path:
+            raise ValueError(f"RepositoryFile {file_id} has no file path")
 
         logger.info(f"Starting background processing for file: {file_record.file_name} (ID: {file_id})")
 
         storage_service = FileStorageService()
-        if file_record.file_path is None:
-            raise ValueError(f"RepositoryFile {file_id} has no file path")
-
         file_bytes = storage_service.read_file_bytes(file_record.file_path)
         parser = get_parser_by_file_type(file_record.file_type)
         sections = parser.safe_parse(
@@ -346,18 +375,21 @@ def process_repository_file_task(event_type: str, payload: dict):
 
         chunker = get_chunker()
         chunks = chunker.chunk_sections(sections)
-
         logger.info(f"Generated {len(chunks)} chunks for file: {file_record.file_name}")
+
+        if not chunks:
+            logger.warning(f"File {file_id} generated 0 chunks. Marking as SUCCESS directly.")
+            mark_file_status(file_id, ProcessStatus.SUCCESS)
+            return
 
         redis_client = get_raw_redis_client("default")
         redis_client.set(f"file:{file_id}:pending_chunks", len(chunks))
+
         for chunk in chunks:
             if not static_rule_filter.passes(chunk):
                 remaining = redis_client.decr(f"file:{file_id}:pending_chunks")
                 if remaining == 0:
-                    file_record.status = ProcessStatus.SUCCESS
-                    file_record.save(update_fields=['status'])
-
+                    mark_file_status(file_id, ProcessStatus.SUCCESS)
                 continue
 
             publish_event.delay(
@@ -370,13 +402,19 @@ def process_repository_file_task(event_type: str, payload: dict):
             )
 
         logger.info(f"File {file_id} split into {len(chunks)} chunks and dispatched successfully.")
+
     except RepositoryFile.DoesNotExist:
         logger.error(f"RepositoryFile with ID {file_id} not found.")
-    except Exception as exc:
-        logger.error(f"Error processing file {file_id}: {exc}")
-        try:
-            mark_file_status(file_id, ProcessStatus.ERROR)
-        except Exception:
-            pass
+        mark_file_status(file_id, ProcessStatus.ERROR)
 
-        raise process_repository_file_task.retry(exc=exc, countdown=60)
+    except ValueError as val_err:
+        logger.error(f"Validation error for file {file_id}: {val_err}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+
+    except Exception as exc:
+        logger.error(f"Error processing file {file_id}: {exc}", exc_info=True)
+        try:
+            raise self.retry(exc=exc, countdown=60)
+        except MaxRetriesExceededError:
+            logger.error(f"Max retries exceeded for processing file {file_id}.")
+            mark_file_status(file_id, ProcessStatus.ERROR)

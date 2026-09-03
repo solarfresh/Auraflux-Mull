@@ -1,5 +1,7 @@
+import re
 from typing import Any, Dict, List, Optional
 
+from django.core.exceptions import ObjectDoesNotExist
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -56,15 +58,27 @@ class OpenSearchSchemaFactory:
         plan = getattr(project, "subscription_plan", "free").lower()
         project_id = str(project.id)
 
-        # Retrieve and normalize the embedding model name to avoid vector dimension conflicts
-        raw_model_name = getattr(project, "embedding_model", "text_embedding_3_small")
-        model_slug = raw_model_name.lower().replace("-", "_").replace(".", "_")
+        # 1. Safely retrieve embedding configuration to avoid RelatedObjectDoesNotExist exception
+        raw_model_name = "text_embedding_3_small"
+        try:
+            embedding_config = getattr(project, "embedding", None)
+            if embedding_config:
+                # Extract model from parameters dictionary or fallback to config name
+                parameters = embedding_config.parameters or {}
+                raw_model_name = parameters.get("model") or parameters.get("model_name") or embedding_config.name
+        except ObjectDoesNotExist:
+            pass
 
-        # 1. Silo Mode: Only top-tier Enterprise plans get a dedicated index to prevent shard explosion
+        clean_model_name = re.sub(r'[^a-z0-9]', '_', str(raw_model_name).lower())
+        model_slug = re.sub(r'_+', '_', clean_model_name).strip('_')
+        if not model_slug:
+            model_slug = "default_model"
+
+        # 3. Silo Mode: Only top-tier Enterprise plans get a dedicated index to prevent shard explosion
         if plan == "enterprise":
             return f"idx_silo_{project_id}_{model_slug}", None, True
 
-        # 2. Pool Mode: Pro and Free plans share index pools grouped strictly by embedding model slug
+        # 4. Pool Mode: Pro and Free plans share index pools grouped strictly by embedding model slug
         index_name = f"idx_pool_shared_{model_slug}"
         routing_key = f"proj_{project_id}"  # Route by project_id to optimize shard-level search performance
 

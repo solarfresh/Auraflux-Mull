@@ -22,16 +22,15 @@ def get_opensearch_client() -> OpenSearch:
     global _opensearch_client_instance
 
     if _opensearch_client_instance is None:
-        # Fallback configurations if not defined in Django settings
-        hosts = getattr(settings, "OPENSEARCH_HOSTS", ["http://localhost:9200"])
-        auth = getattr(settings, "OPENSEARCH_AUTH", ("admin", "admin"))
-        use_ssl = getattr(settings, "OPENSEARCH_USE_SSL", False)
-        verify_certs = getattr(settings, "OPENSEARCH_VERIFY_CERTS", False)
+        config = getattr(settings, "OPENSEARCH", {})
 
-        # Performance and connection pool settings
-        max_connections = getattr(settings, "OPENSEARCH_MAX_CONNECTIONS", 20)
-        timeout = getattr(settings, "OPENSEARCH_TIMEOUT", 30)
-        max_retries = getattr(settings, "OPENSEARCH_MAX_RETRIES", 3)
+        hosts = config.get("HOSTS", ["http://localhost:9200"])
+        auth = config.get("AUTH", ("admin", "admin"))
+        use_ssl = config.get("USE_SSL", False)
+        verify_certs = config.get("VERIFY_CERTS", False)
+        max_connections = config.get("MAX_CONNECTIONS", 20)
+        timeout = config.get("TIMEOUT", 30)
+        max_retries = config.get("MAX_RETRIES", 3)
 
         try:
             _opensearch_client_instance = OpenSearch(

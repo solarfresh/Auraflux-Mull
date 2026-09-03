@@ -143,6 +143,23 @@ DATABASES = {
     }
 }
 
+OPENSEARCH = {
+    'HOSTS': [
+        host.strip()
+        for host in os.environ.get('OPENSEARCH_HOSTS', 'http://localhost:9200').split(',')
+        if host.strip()
+    ],
+    'AUTH': (
+        os.environ.get('OPENSEARCH_USER', 'admin'),
+        os.environ.get('OPENSEARCH_PASSWORD', 'admin')
+    ),
+    'USE_SSL': os.environ.get('OPENSEARCH_USE_SSL', 'false').lower() in ('true', '1', 'yes'),
+    'VERIFY_CERTS': os.environ.get('OPENSEARCH_VERIFY_CERTS', 'false').lower() in ('true', '1', 'yes'),
+    'MAX_CONNECTIONS': int(os.environ.get('OPENSEARCH_MAX_CONNECTIONS', '20')),
+    'TIMEOUT': int(os.environ.get('OPENSEARCH_TIMEOUT', '30')),
+    'MAX_RETRIES': int(os.environ.get('OPENSEARCH_MAX_RETRIES', '3')),
+}
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",

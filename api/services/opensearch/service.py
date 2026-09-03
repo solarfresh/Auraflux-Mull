@@ -44,6 +44,9 @@ class OpenSearchService:
                 }
             },
             "mappings": {
+                "_routing": {
+                    "required": getattr(schema, "is_pool_mode", True)
+                },
                 "properties": {
                     "project_id": {"type": "keyword"},
                     "chunk_id": {"type": "keyword"},
