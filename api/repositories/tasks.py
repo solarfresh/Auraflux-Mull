@@ -13,9 +13,13 @@ from auraflux_core.rag.schemas.chunker import (ChunkAlignment, ChunkConcept,
 from core.celery_app import celery_app
 from core.constants import ProcessStatus
 from core.utils import create_serialized_data, get_serialized_data
-from messaging.constants import (AgentRequest, ProcessConceptSynthesis,
+from django.db import transaction
+from embeddings.models import EmbeddingConfig
+from embeddings.serializers import EmbeddingConfigSerializer
+from messaging.constants import (AgentRequest, EmbeddingRequest,
+                                 ProcessConceptSynthesis,
                                  ProcessRepositoryChunk, ProcessRepositoryFile,
-                                 ProcessTriplesExtractor)
+                                 ProcessTriplesExtractor, ProcessVectorStorage)
 from messaging.tasks import publish_event
 from repositories.models import RepositoryFile
 from repositories.serializers import ChunkDataSerializer
@@ -33,13 +37,16 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
     file_id = payload.get('file_id')
     chunk_payload = payload.get('chunk_payload', None)
     agent_output = payload.get('agent_output', {})
+    redis_client = get_raw_redis_client("default")
 
     if chunk_payload is None:
         logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
     if file_id is None:
         logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
+        redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
     json_object = json.loads(agent_output)
@@ -47,41 +54,52 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
     chunk.alignment = ChunkAlignment(**json_object['alignment'])
     chunk.concept = ChunkConcept(**json_object['concept'])
 
-    chunk_data = chunk.model_dump(
-        mode="json",
-        exclude={'id', 'fileId'}
+    embedding_config = cast(Dict, get_serialized_data(
+        query={'role': 'SearchEmbedding'},
+        model_class=EmbeddingConfig,
+        serializer_class=EmbeddingConfigSerializer,
+        many=False
+    ))
+    embedding_config_params = embedding_config.get('parameters', {})
+
+    # Extract and assemble texts based on the StandardChunk model
+    target_question = chunk.alignment.targetQuestion if chunk.alignment else ""
+    concept_text = f"{chunk.concept.title} {chunk.concept.description}".strip() if chunk.concept else ""
+    evidence_text = chunk.evidence.excerptText if chunk.evidence else ""
+
+    # Input array ordered strictly for multi-vector mapping: [Question, Concept, Evidence]
+    input_texts = [
+        target_question,
+        concept_text,
+        evidence_text
+    ]
+
+    # Next event context payload
+    next_event_payload = {
+        'file_id': file_id,
+        'chunk_id': chunk.id,
+        'chunk_payload': chunk_payload,
+    }
+
+    # Construct Embedding Event Payload matching get_embedding_response args
+    embedding_payload = {
+        'file_id': file_id,
+        'embedding_name': embedding_config.get('name', ''),
+        'embedding_role': embedding_config.get('role', ''),
+        'parameters': embedding_config_params,
+        'input_text': input_texts,
+        'use_batch': payload.get('is_premium', True),
+        'next_event_type': ProcessConceptSynthesis.name,
+        'next_event_payload': next_event_payload,
+        'next_event_queue': ProcessConceptSynthesis.queue,
+    }
+
+    # Dispatch event to the Embedding Task Queue
+    publish_event.delay(
+        event_type=EmbeddingRequest.name,
+        payload=embedding_payload,
+        queue=EmbeddingRequest.queue
     )
-    chunk_data['fileId'] = file_id
-
-    create_serialized_data(
-        chunk_data,
-        ChunkDataSerializer
-    )
-
-    # ------------------------------------------------------------------
-    # TODO 2: Call the embedding model (假設產出的 vectors 結構如下)
-    # ------------------------------------------------------------------
-    # question_vector = embedding_service.embed(chunk.question)
-    # concept_vector = embedding_service.embed(chunk.concept.summary)
-    # evidence_vector = embedding_service.embed(chunk.evidence)
-    question_vector = [0.1] * 1536  # 模擬資料
-    concept_vector = [0.1] * 1536
-    evidence_vector = [0.1] * 1536
-
-    # Write to vector database (OpenSearch)
-    sync_chunk_to_opensearch(
-        file_id=file_id,
-        chunk_id=chunk.id,
-        chunk_data=chunk_data,
-        question_vector=question_vector,
-        concept_vector=concept_vector,
-        evidence_vector=evidence_vector,
-    )
-
-    redis_client = get_raw_redis_client("default")
-    remaining = redis_client.decr(f"file:{file_id}:pending_chunks")
-    if remaining == 0:
-        mark_file_status(file_id, ProcessStatus.SUCCESS)
 
 @celery_app.task(name=ProcessTriplesExtractor.name, ignore_result=True)
 def process_triples_extractor_task(event_type: str, payload: dict):
@@ -89,13 +107,16 @@ def process_triples_extractor_task(event_type: str, payload: dict):
     file_id = payload.get('file_id')
     chunk_payload = payload.get('chunk_payload')
     agent_output = payload.get('agent_output', {})
+    redis_client = get_raw_redis_client("default")
 
     if chunk_payload is None:
         logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
     if file_id is None:
         logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
+        redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
     chunk = StandardChunk.model_validate_json(chunk_payload)
@@ -150,6 +171,74 @@ def process_triples_extractor_task(event_type: str, payload: dict):
         queue=AgentRequest.queue
     )
 
+@celery_app.task(name=ProcessVectorStorage.name, ignore_result=True)
+def process_vector_storage_task(event_type: str, payload: dict):
+    task_id = process_vector_storage_task.request.id
+    file_id = payload.get('file_id')
+    chunk_payload = payload.get('chunk_payload', None)
+    embedding_output = payload.get('embedding_output', [])
+    redis_client = get_raw_redis_client("default")
+
+    # 1. Basic validation
+    if chunk_payload is None:
+        logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
+
+    if file_id is None:
+        logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
+
+    # Validate output vector completeness to prevent IndexError
+    if not isinstance(embedding_output, list) or len(embedding_output) < 3:
+        logger.error(f"Task {task_id} received incomplete embedding_output: {embedding_output}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
+
+    # Extract vectors safely
+    question_vector = embedding_output[0]
+    concept_vector = embedding_output[1]
+    evidence_vector = embedding_output[2]
+
+    # 2. Parse chunk and build standard JSON structure
+    chunk = StandardChunk.model_validate_json(chunk_payload)
+
+    chunk_data = chunk.model_dump(
+        mode="json",
+        exclude={'id', 'fileId'}
+    )
+    chunk_data['fileId'] = file_id
+
+    try:
+        # 3. Database operation inside atomic transaction
+        with transaction.atomic():
+            create_serialized_data(
+                chunk_data,
+                ChunkDataSerializer
+            )
+
+        # 4. External Vector DB syncing outside DB transaction
+        sync_chunk_to_opensearch(
+            file_id=file_id,
+            chunk_id=chunk.id,
+            chunk_data=chunk_data,
+            question_vector=question_vector,
+            concept_vector=concept_vector,
+            evidence_vector=evidence_vector,
+        )
+
+        # 5. Non-relational Redis operations outside DB transaction
+        remaining = redis_client.decr(f"file:{file_id}:pending_chunks")
+        if remaining == 0:
+            mark_file_status(file_id, ProcessStatus.SUCCESS)
+
+    except Exception as e:
+        logger.error(f"Task {task_id} failed during vector storage processing: {str(e)}", exc_info=True)
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        raise e
 
 @celery_app.task(name=ProcessRepositoryChunk.name, ignore_result=True)
 def process_repository_chunk_task(event_type: str, payload: dict):
