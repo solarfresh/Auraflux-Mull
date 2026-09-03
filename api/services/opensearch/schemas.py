@@ -54,7 +54,6 @@ class OpenSearchSchemaFactory:
         - Standard/Pro/Free (Pool): Shared index grouped by embedding model -> idx_pool_shared_{model_slug}
         """
         plan = getattr(project, "subscription_plan", "free").lower()
-        user_id = str(project.owner_id)
         project_id = str(project.id)
 
         # Retrieve and normalize the embedding model name to avoid vector dimension conflicts

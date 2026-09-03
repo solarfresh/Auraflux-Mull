@@ -36,30 +36,49 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
     task_id = process_concept_synthesis_task.request.id
     file_id = payload.get('file_id')
     chunk_payload = payload.get('chunk_payload', None)
-    agent_output = payload.get('agent_output', {})
+    agent_output = payload.get('agent_output', None)
     redis_client = get_raw_redis_client("default")
-
-    if chunk_payload is None:
-        logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
-        redis_client.decr(f"file:{file_id}:pending_chunks")
-        return
 
     if file_id is None:
         logger.error(f"Task {task_id} missing 'file_id' in payload: {payload}")
+        return
+
+    if chunk_payload is None:
+        logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
-    json_object = json.loads(agent_output)
-    chunk = StandardChunk.model_validate_json(chunk_payload)
-    chunk.alignment = ChunkAlignment(**json_object['alignment'])
-    chunk.concept = ChunkConcept(**json_object['concept'])
+    if agent_output is None:
+        logger.error(f"Task {task_id} missing 'agent_output' in payload: {payload}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
 
-    embedding_config = cast(Dict, get_serialized_data(
-        query={'role': 'SearchEmbedding'},
-        model_class=EmbeddingConfig,
-        serializer_class=EmbeddingConfigSerializer,
-        many=False
-    ))
+    try:
+        json_object = json.loads(agent_output)
+        chunk = StandardChunk.model_validate_json(chunk_payload)
+        chunk.alignment = ChunkAlignment(**json_object['alignment'])
+        chunk.concept = ChunkConcept(**json_object['concept'])
+    except Exception as e:
+        logger.error(f"Task {task_id} failed to parse chunk or agent_output: {e}")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
+
+    try:
+        embedding_config = cast(Dict, get_serialized_data(
+            query={'role': 'SearchEmbedding'},
+            model_class=EmbeddingConfig,
+            serializer_class=EmbeddingConfigSerializer,
+            many=False
+        ))
+    except EmbeddingConfig.DoesNotExist:
+        logger.error(f"Task {task_id}: EmbeddingConfig with role 'SearchEmbedding' not found.")
+        mark_file_status(file_id, ProcessStatus.ERROR)
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
+
     embedding_config_params = embedding_config.get('parameters', {})
 
     # Extract and assemble texts based on the StandardChunk model
@@ -78,20 +97,20 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
     next_event_payload = {
         'file_id': file_id,
         'chunk_id': chunk.id,
-        'chunk_payload': chunk_payload,
+        'chunk_payload': chunk.model_dump_json(),
     }
 
     # Construct Embedding Event Payload matching get_embedding_response args
     embedding_payload = {
-        'file_id': file_id,
+        'provider_id': embedding_config.get('providerId', None),
         'embedding_name': embedding_config.get('name', ''),
         'embedding_role': embedding_config.get('role', ''),
         'parameters': embedding_config_params,
         'input_text': input_texts,
         'use_batch': payload.get('is_premium', True),
-        'next_event_type': ProcessConceptSynthesis.name,
+        'next_event_type': ProcessVectorStorage.name,
         'next_event_payload': next_event_payload,
-        'next_event_queue': ProcessConceptSynthesis.queue,
+        'next_event_queue': ProcessVectorStorage.queue,
     }
 
     # Dispatch event to the Embedding Task Queue
@@ -119,8 +138,9 @@ def process_triples_extractor_task(event_type: str, payload: dict):
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
+    json_object = json.loads(agent_output)
     chunk = StandardChunk.model_validate_json(chunk_payload)
-    chunk.keywords = ChunkKeywords.model_validate_json(agent_output)
+    chunk.keywords = ChunkKeywords(**json_object)
 
     semantic_filter_pipeline = FilterPipeline()
     semantic_filter_pipeline.add_filter(GroundedInEvidenceFilter())

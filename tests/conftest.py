@@ -1,8 +1,15 @@
+import json
+import uuid
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+from embeddings.models import EmbeddingConfig
+from projects.models import EntityStatus, Project
+from repositories.models import (ProcessStatus, RepositoryFile,
+                                 SupportedFileType)
 
 # -------------------------------------------------------------------------
-# 1. Global Environment & Third-Party Mocks
+# Global Environment & Third-Party Mocks
 # -------------------------------------------------------------------------
 
 def pytest_configure(config):
@@ -21,71 +28,8 @@ def pytest_configure(config):
                 "formatter": "verbose" if "verbose" in settings.LOGGING.get("formatters", {}) else None
             }
 
-@pytest.fixture(autouse=True)
-def mock_external_infrastructure():
-    """
-    Globally mock out underlying asynchronous message brokers or network operations
-    to ensure tests run in total isolation without hitting live services.
-    """
-    # Mock the publish_event Celery task to prevent actual network/broker delivery
-    with patch("messaging.tasks.publish_event.delay") as mock_publish, \
-         patch("canvases.tasks.publish_event.delay") as mock_canvas_publish:
-        yield {
-            "publish_event": mock_publish,
-            "canvas_publish": mock_canvas_publish
-        }
-
-
 # -------------------------------------------------------------------------
-# 2. Reusable Database Fixtures (Data Factories)
-# -------------------------------------------------------------------------
-
-@pytest.fixture
-def test_user(db):
-    """
-    Provides a standardized user model instance for authentication-guarded scopes.
-    """
-    from django.contrib.auth import get_user_model
-    User = get_user_model() if hasattr(get_user_model(), 'objects') else None
-
-    # Fallback to dynamic creation if user app relies on standard auth architecture
-    if not User:
-        from django.contrib.auth.models import User
-
-    return User.objects.create_user(
-        username="test_weaver",
-        email="weaver@auraflux.ai",
-        password="secure_password_123"
-    )
-
-
-@pytest.fixture
-def test_project(db, test_user):
-    """
-    Provides a basic Research Project container mapped to the testing user session.
-    """
-    from projects.models import ResearchProject
-    return ResearchProject.objects.create(
-        name="Auraflux Core Synthesis",
-        description="Evaluating automated multi-disciplinary graph anchoring.",
-        user=test_user
-    )
-
-
-# @pytest.fixture
-# def test_canvas(db, test_project):
-#     """
-#     Provides a concrete base Canvas workspace assigned to the generated target project.
-#     """
-#     from canvases.models import Canvas
-#     return Canvas.objects.create(
-#         name="Main Operational Weaver View",
-#         project=test_project
-#     )
-
-
-# -------------------------------------------------------------------------
-# 3. API Client Fixtures (For Integration Endpoint Testing)
+# API Client Fixtures (For Integration Endpoint Testing)
 # -------------------------------------------------------------------------
 
 @pytest.fixture
@@ -98,3 +42,104 @@ def authenticated_api_client(test_user):
     client = APIClient()
     client.force_authenticate(user=test_user)
     return client
+
+# -------------------------------------------------------------------------
+# Database Fixtures
+# -------------------------------------------------------------------------
+
+@pytest.fixture
+def create_search_embedding_config():
+    return EmbeddingConfig.objects.create(
+        name="text-embedding-3-small",
+        role="SearchEmbedding",
+        parameters={
+            "dimensions": 1536,
+            "provider": "openai",
+            "model": "text-embedding-3-small"
+        }
+    )
+
+@pytest.fixture
+def create_project(db):
+    """
+    Creates a valid Project database entry required as a ForeignKey for RepositoryFile.
+    """
+    return Project.objects.create(
+        name="Test Synthesis Project",
+        description="A project instance for task pipeline integration tests.",
+        status=EntityStatus.DRAFT,
+        tags=["test", "celery", "pipeline"],
+        user_id=uuid.uuid4()
+    )
+
+@pytest.fixture
+def create_repository_file(db, create_project):
+    """
+    Creates a complete RepositoryFile database entry backed by an existing Project.
+    """
+    return RepositoryFile.objects.create(
+        file_name="test_concept_document.pdf",
+        file_size="1.2 MB",
+        file_type=SupportedFileType.PDF,
+        status=ProcessStatus.PROCESSING,
+        project=create_project,
+        user_id=uuid.uuid4()
+    )
+
+@pytest.fixture
+def create_embedding_config(db, create_project):
+    """
+    Creates a valid EmbeddingConfig entry required for concept synthesis tasks.
+    """
+    return EmbeddingConfig.objects.create(
+        name="Text Embedding Config",
+        role="SearchEmbedding",
+        provider_id=uuid.uuid4(),
+        parameters={"model": "text-embedding-3-small"},
+        project=create_project
+    )
+
+# -------------------------------------------------------------------------
+# Service Mocks (For Unit Testing Service Logic)
+# -------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_redis():
+    """Mock raw Redis client instance."""
+    return MagicMock()
+
+# -------------------------------------------------------------------------
+# Mock Payload Fixtures
+# -------------------------------------------------------------------------
+
+@pytest.fixture
+def valid_chunk_payload(create_repository_file):
+    """
+    Provides a valid JSON string payload matching all required fields of StandardChunk.
+    """
+    chunk_data = {
+        "id": str(uuid.uuid4()),
+        "fileId": str(create_repository_file.id),
+        "evidence": {
+            "excerptText": "This section outlines the non-negotiable compliance rules for cloud storage.",
+            "location": "Page 1, Section 2"
+        }
+    }
+    return json.dumps(chunk_data)
+
+
+@pytest.fixture
+def valid_agent_output():
+    """
+    Provides a valid LLM agent JSON output payload for alignment and concept.
+    """
+    agent_data = {
+        "alignment": {
+            "targetQuestion": "What is concept synthesis?"
+        },
+        "concept": {
+            "title": "Concept Synthesis",
+            "description": "Synthesizing key insights from multiple chunks."
+        }
+    }
+    return json.dumps(agent_data)

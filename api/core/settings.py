@@ -93,8 +93,10 @@ LOGGING = {
         },
         'logfile': {
             'level': 'INFO',
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.RotatingFileHandler',
             'filename': '/auraflux/logs/default.log',
+            'maxBytes': 1024 * 1024 * 10,
+            'backupCount': 5,
             'formatter': 'verbose',
         },
     },
@@ -105,7 +107,8 @@ LOGGING = {
         },
         'default': {
             'handlers': ['console', 'logfile'],
-            'level': 'INFO'
+            'level': 'INFO',
+            'propagate': False,
         },
     },
 }
