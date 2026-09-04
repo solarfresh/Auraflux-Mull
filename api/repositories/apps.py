@@ -8,6 +8,13 @@ class RepositoriesConfig(AppConfig):
 
     def ready(self):
         import sys
-        if 'runserver' in sys.argv or 'gunicorn' in sys.argv or 'uvicorn' in sys.argv:
+
+        is_web_server = any(
+            server in arg
+            for arg in sys.argv
+            for server in ['runserver', 'gunicorn', 'uvicorn']
+        )
+
+        if is_web_server:
             from .utils import setup_opensearch
             setup_opensearch()

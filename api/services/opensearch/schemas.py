@@ -23,9 +23,9 @@ class OpenSearchCreatePipelineSchema(BaseModel):
             "description": self.description,
             "phase_results_processors": [
                 {
-                    "rrf": {
-                        "parameters": {
-                            "weight_power": self.weight_power,
+                    "score-ranker-processor": {
+                        "combination": {
+                            "technique": "rrf",
                             "rank_constant": self.rank_constant
                         }
                     }
