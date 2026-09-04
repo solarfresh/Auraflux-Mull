@@ -52,6 +52,13 @@ def mark_file_status(file_record_id: str, status: ProcessStatus):
     file_record.status = status
     file_record.save(update_fields=['status'])
 
+def decrement_pending_chunks(file_id: str, redis_client) -> None:
+    """Decrement the pending chunks count for a given file."""
+    remaining = redis_client.decr(f"file:{file_id}:pending_chunks")
+    if remaining == 0:
+        mark_file_status(file_id, ProcessStatus.SUCCESS)
+
+
 def sync_chunk_to_opensearch(
     file_id: str,
     chunk_id: str,
