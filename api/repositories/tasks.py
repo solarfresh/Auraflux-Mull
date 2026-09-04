@@ -240,14 +240,15 @@ def process_vector_storage_task(event_type: str, payload: dict):
 
     try:
         with transaction.atomic():
-            create_serialized_data(
+            created_data = create_serialized_data(
                 chunk_data,
                 ChunkDataSerializer
             )
+            chunk_id = str(created_data.get('id', ''))
 
         sync_chunk_to_opensearch(
             file_id=file_id,
-            chunk_id=chunk.id,
+            chunk_id=chunk_id,
             chunk_data=chunk_data,
             question_vector=question_vector,
             concept_vector=concept_vector,
