@@ -15,6 +15,8 @@ from repositories.serializers import RepositoryFileSerializer
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
+from services.opensearch import (OpenSearchSchemaFactory, OpenSearchService,
+                                 get_opensearch_client)
 from services.storage import FileStorageService
 
 logger = logging.getLogger(__name__)
@@ -201,24 +203,28 @@ class RepositoryFileDetailView(APIView):
     async def delete(self, request, project_id, file_id, *args, **kwargs):
         user = request.user
 
-        result, error_msg = await sync_to_async(self._get_and_delete_file)(
+        file_info, error_msg = await sync_to_async(self._get_and_delete_file)(
             user_id=str(user.id),
             project_id=project_id,
             file_id=file_id
         )
 
-        if error_msg:
+        if error_msg or not file_info:
             return Response(
-                {"error": error_msg},
+                {"error": error_msg or "File not found or permission denied."},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        file_path, storage_type = result if result else (None, None)
+        if file_info["project"]:
+            try:
+                await sync_to_async(self._delete_opensearch_docs)(file_info["project"], file_id)
+            except Exception as e:
+                logger.warning(f"Failed to delete OpenSearch docs for file_id {file_id}: {str(e)}")
 
-        if file_path:
+        if file_info["file_path"]:
             try:
                 storage_service = FileStorageService()
-                await sync_to_async(storage_service.delete_file)(file_path)
+                await sync_to_async(storage_service.delete_file)(file_info["file_path"])
             except Exception as e:
                 logger.warning(f"Failed to delete physical file from storage: {str(e)}")
 
@@ -229,7 +235,7 @@ class RepositoryFileDetailView(APIView):
 
     def _get_and_delete_file(self, user_id: str, project_id: str, file_id: str):
         try:
-            file_record = RepositoryFile.objects.get(
+            file_record = RepositoryFile.objects.select_related("project").get(
                 id=file_id,
                 project_id=project_id,
                 user_id=user_id
@@ -237,9 +243,22 @@ class RepositoryFileDetailView(APIView):
         except RepositoryFile.DoesNotExist:
             return None, "File not found or permission denied."
 
-        file_path = file_record.file_path
-        storage_type = file_record.storage_type
+        file_info = {
+            "file_path": file_record.file_path,
+            "storage_type": file_record.storage_type,
+            "project": file_record.project
+        }
 
         file_record.delete()
 
-        return (file_path, storage_type), None
+        return file_info, None
+
+    def _delete_opensearch_docs(self, project_obj, file_id: str):
+        """Helper method to delete OpenSearch documents synchronously."""
+        opensearch_service = OpenSearchService(client=get_opensearch_client())
+
+        schema = OpenSearchSchemaFactory.build_delete_by_file_schema(
+            project=project_obj,
+            file_ids=[file_id]
+        )
+        opensearch_service.delete_by_file_ids(schema)

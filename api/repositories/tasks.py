@@ -46,13 +46,11 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
 
     if chunk_payload is None:
         logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
     if agent_output is None:
         logger.error(f"Task {task_id} missing 'agent_output' in payload: {payload}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
@@ -63,7 +61,6 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
         chunk.concept = ChunkConcept(**json_object['concept'])
     except Exception as e:
         logger.error(f"Task {task_id} failed to parse chunk or agent_output: {e}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
@@ -76,7 +73,6 @@ def process_concept_synthesis_task(event_type: str, payload: dict):
         ))
     except EmbeddingConfig.DoesNotExist:
         logger.error(f"Task {task_id}: EmbeddingConfig with role 'SearchEmbedding' not found.")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
@@ -140,13 +136,17 @@ def process_triples_extractor_task(event_type: str, payload: dict):
 
     if agent_output is None:
         logger.error(f"Task {task_id} missing 'agent_output' in payload: {payload}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
-    json_object = json.loads(agent_output)
-    chunk = StandardChunk.model_validate_json(chunk_payload)
-    chunk.keywords = ChunkKeywords(**json_object)
+    try:
+        json_object = json.loads(agent_output)
+        chunk = StandardChunk.model_validate_json(chunk_payload)
+        chunk.keywords = ChunkKeywords(**json_object)
+    except Exception as e:
+        logger.error(f"Task {task_id} failed to parse chunk or agent_output: {e}")
+        redis_client.decr(f"file:{file_id}:pending_chunks")
+        return
 
     semantic_filter_pipeline = FilterPipeline()
     semantic_filter_pipeline.add_filter(GroundedInEvidenceFilter())
@@ -211,13 +211,11 @@ def process_vector_storage_task(event_type: str, payload: dict):
 
     if chunk_payload is None:
         logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
     if not isinstance(embedding_output, list) or len(embedding_output) < 3:
         logger.error(f"Task {task_id} received incomplete embedding_output: {embedding_output}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
@@ -234,20 +232,20 @@ def process_vector_storage_task(event_type: str, payload: dict):
         chunk_data['fileId'] = file_id
     except Exception as e:
         logger.error(f"Task {task_id} failed to parse StandardChunk payload: {e}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
     try:
         with transaction.atomic():
-            create_serialized_data(
+            created_data = create_serialized_data(
                 chunk_data,
                 ChunkDataSerializer
             )
+            chunk_id = str(created_data.get('id', ''))
 
         sync_chunk_to_opensearch(
             file_id=file_id,
-            chunk_id=chunk.id,
+            chunk_id=chunk_id,
             chunk_data=chunk_data,
             question_vector=question_vector,
             concept_vector=concept_vector,
@@ -260,7 +258,6 @@ def process_vector_storage_task(event_type: str, payload: dict):
 
     except Exception as e:
         logger.error(f"Task {task_id} failed during vector storage processing: {str(e)}", exc_info=True)
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
@@ -277,7 +274,6 @@ def process_repository_chunk_task(event_type: str, payload: dict):
 
     if chunk_payload is None:
         logger.error(f"Task {task_id} missing 'chunk_payload' in payload: {payload}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
@@ -285,7 +281,6 @@ def process_repository_chunk_task(event_type: str, payload: dict):
         chunk = StandardChunk.model_validate_json(chunk_payload)
     except Exception as e:
         logger.error(f"Task {task_id} failed to parse StandardChunk payload: {e}")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 
@@ -298,7 +293,6 @@ def process_repository_chunk_task(event_type: str, payload: dict):
         ))
     except AgentConfig.DoesNotExist:
         logger.error(f"Task {task_id}: AgentConfig with role 'ExtractKeywordsAgent' not found.")
-        mark_file_status(file_id, ProcessStatus.ERROR)
         redis_client.decr(f"file:{file_id}:pending_chunks")
         return
 

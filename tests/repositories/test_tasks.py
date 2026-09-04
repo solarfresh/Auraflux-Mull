@@ -74,7 +74,6 @@ def test_process_concept_synthesis_missing_payload_data(
 
     process_concept_synthesis_task("event_type", payload)
 
-    mock_mark_status.assert_called_once_with(file_id, ProcessStatus.ERROR)
     mock_redis.decr.assert_called_once_with(f"file:{file_id}:pending_chunks")
 
 @pytest.mark.django_db
@@ -98,7 +97,6 @@ def test_process_concept_synthesis_corrupted_json(
 
     process_concept_synthesis_task("event_type", payload)
 
-    mock_mark_status.assert_called_once_with(file_id, ProcessStatus.ERROR)
     mock_redis.decr.assert_called_once_with(f"file:{file_id}:pending_chunks")
 
 @pytest.mark.django_db
@@ -123,5 +121,4 @@ def test_process_concept_synthesis_embedding_config_not_found(
 
     process_concept_synthesis_task("event_type", payload)
 
-    mock_mark_status.assert_called_once_with(file_id, ProcessStatus.ERROR)
     mock_redis.decr.assert_called_once_with(f"file:{file_id}:pending_chunks")
