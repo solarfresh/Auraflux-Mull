@@ -34,6 +34,15 @@ class OpenSearchDeleteSchema(BaseModel):
     routing: Optional[str] = Field(default=None, description="OpenSearch routing key")
 
 
+class OpenSearchDeleteByFileSchema(BaseModel):
+    """Schema encapsulating parameters required for deleting documents by file_id."""
+    model_config = ConfigDict(frozen=True)
+
+    index_name: str = Field(..., min_length=1, description="Target OpenSearch index name")
+    file_ids: List[str] = Field(..., min_length=1, description="List of file_ids to delete")
+    routing: Optional[str] = Field(default=None, description="OpenSearch routing key")
+    project_id: Optional[str] = Field(default=None, description="Project ID for logical isolation in Pool mode")
+
 class OpenSearchSyncSchema(BaseModel):
     """Schema encapsulating parameters required for OpenSearch bulk indexing."""
     model_config = ConfigDict(frozen=True)
@@ -162,6 +171,23 @@ class OpenSearchSchemaFactory:
             index_name=index_name,
             doc_ids=[str(doc_id) for doc_id in doc_ids],
             routing=routing_key
+        )
+
+    @classmethod
+    def build_delete_by_file_schema(
+        cls,
+        project,
+        file_ids: List[str]
+    ) -> OpenSearchDeleteByFileSchema:
+        """Builds schema for deleting documents by file_ids using query."""
+        index_name, routing_key, is_silo = cls._resolve_tenant_routing(project)
+        project_id = str(project.id)
+
+        return OpenSearchDeleteByFileSchema(
+            index_name=index_name,
+            file_ids=[str(fid) for fid in file_ids],
+            routing=routing_key,
+            project_id=None if is_silo else project_id
         )
 
     @classmethod

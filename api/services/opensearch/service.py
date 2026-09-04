@@ -3,7 +3,8 @@ from typing import Any, Dict, List, Tuple
 
 from opensearchpy import OpenSearch, helpers
 
-from .schemas import (OpenSearchCreateIndexSchema, OpenSearchDeleteSchema,
+from .schemas import (OpenSearchCreateIndexSchema,
+                      OpenSearchDeleteByFileSchema, OpenSearchDeleteSchema,
                       OpenSearchSearchSchema, OpenSearchSyncSchema)
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,51 @@ class OpenSearchService:
         except Exception as e:
             logger.error(f"Failed to delete document {target_id} from {schema.index_name}: {e}")
             return False
+
+    def delete_by_file_ids(self, schema: OpenSearchDeleteByFileSchema) -> int:
+        """Deletes documents matching the given file_ids using delete_by_query."""
+        if not schema.file_ids:
+            return 0
+
+        terms_query = {"terms": {"file_id.keyword": schema.file_ids}}
+
+        if schema.project_id:
+            query_body = {
+                "conflicts": "proceed",
+                "query": {
+                    "bool": {
+                        "must": [terms_query],
+                        "filter": [{"term": {"project_id": schema.project_id}}]
+                    }
+                }
+            }
+        else:
+            query_body = {
+                "conflicts": "proceed",
+                "query": terms_query
+            }
+
+        params = {}
+        if schema.routing:
+            params["routing"] = schema.routing
+
+        try:
+            response = self.client.delete_by_query(
+                index=schema.index_name,
+                body=query_body,
+                params=params
+            )
+            deleted_count = response.get("deleted", 0)
+            logger.info(
+                f"Successfully deleted {deleted_count} docs for file_ids "
+                f"{schema.file_ids} in index '{schema.index_name}'"
+            )
+            return deleted_count
+        except Exception as e:
+            logger.error(
+                f"Failed delete_by_query for file_ids in index '{schema.index_name}': {e}"
+            )
+            return 0
 
     def sync_bulk(self, schema: OpenSearchSyncSchema) -> Tuple[int, List[Any]]:
         """Executes bulk indexing operations using the provided OpenSearchSyncSchema."""
