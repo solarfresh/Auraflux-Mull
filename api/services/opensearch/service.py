@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Tuple
 from opensearchpy import OpenSearch, helpers
 
 from .schemas import (OpenSearchCreateIndexSchema,
+                      OpenSearchCreatePipelineSchema,
                       OpenSearchDeleteByFileSchema, OpenSearchDeleteSchema,
                       OpenSearchSearchSchema, OpenSearchSyncSchema)
 
@@ -49,18 +50,56 @@ class OpenSearchService:
                     "required": getattr(schema, "is_pool_mode", True)
                 },
                 "properties": {
-                    "project_id": {"type": "keyword"},
-                    "chunk_id": {"type": "keyword"},
-                    "target_question": {"type": "text"},
-                    "concept_title": {"type": "text"},
-                    "evidence_text": {"type": "text"},
+                    # --------------------------------------------------------
+                    # 1. Tenant & Identifier Metadata
+                    # --------------------------------------------------------
+                    "project_id": {
+                        "type": "keyword"
+                    },
+                    "file_id": {
+                        "type": "keyword"
+                    },
+                    "chunk_id": {
+                        "type": "keyword"
+                    },
+
+                    # --------------------------------------------------------
+                    # 2. Text Search Fields (BM25 Lexical Matching)
+                    # --------------------------------------------------------
+                    "target_question": {
+                        "type": "text"
+                    },
+                    "concept_title": {
+                        "type": "text"
+                    },
+                    # Object mapping structure aligned with ChunkEvidence payload
+                    "evidence_text": {
+                        "properties": {
+                            "excerptText": {
+                                "type": "text"
+                            },
+                            "location": {
+                                "type": "text",
+                                "fields": {
+                                    "keyword": {
+                                        "type": "keyword",
+                                        "ignore_above": 256
+                                    }
+                                }
+                            }
+                        }
+                    },
+
+                    # --------------------------------------------------------
+                    # 3. Dense Multi-Vector Fields (FAISS Engine)
+                    # --------------------------------------------------------
                     "question_vector": {
                         "type": "knn_vector",
                         "dimension": schema.dimension,
                         "method": {
                             "name": "hnsw",
                             "space_type": "cosinesimil",
-                            "engine": "nmslib"
+                            "engine": "faiss"
                         }
                     },
                     "concept_vector": {
@@ -69,7 +108,7 @@ class OpenSearchService:
                         "method": {
                             "name": "hnsw",
                             "space_type": "cosinesimil",
-                            "engine": "nmslib"
+                            "engine": "faiss"
                         }
                     },
                     "evidence_vector": {
@@ -78,7 +117,7 @@ class OpenSearchService:
                         "method": {
                             "name": "hnsw",
                             "space_type": "cosinesimil",
-                            "engine": "nmslib"
+                            "engine": "faiss"
                         }
                     }
                 }
@@ -86,6 +125,10 @@ class OpenSearchService:
         }
 
         try:
+            if self.client.indices.exists(index=schema.index_name):
+                logger.warning(f"Index '{schema.index_name}' already exists.")
+                return False
+
             self.client.indices.create(index=schema.index_name, body=index_body)
             logger.info(f"Successfully created index '{schema.index_name}' with dimension {schema.dimension}")
             return True
@@ -102,6 +145,30 @@ class OpenSearchService:
         except Exception as e:
             logger.error(f"Error checking index existence for '{schema.index_name}': {e}")
             return False
+
+    # ------------------------------------------------------------------
+    # Pipeline Management Operations
+    # ------------------------------------------------------------------
+    def create_search_pipeline(self, schema: OpenSearchCreatePipelineSchema) -> bool:
+        """Creates or updates an OpenSearch search pipeline."""
+        try:
+            self.client.search_pipeline.put(
+                id=schema.pipeline_id,
+                body=schema.to_pipeline_body()
+            )
+            logger.info(f"Successfully created search pipeline '{schema.pipeline_id}'")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create search pipeline '{schema.pipeline_id}': {e}")
+            return False
+
+    def ensure_search_pipeline_exists(self, schema: OpenSearchCreatePipelineSchema) -> bool:
+        """Idempotently ensures the target search pipeline exists."""
+        try:
+            self.client.search_pipeline.get(id=schema.pipeline_id)
+            return True
+        except Exception:
+            return self.create_search_pipeline(schema)
 
     def delete_by_ids(self, schema: OpenSearchDeleteSchema) -> Tuple[int, List[Any]]:
         """Deletes multiple documents by their IDs using bulk API."""

@@ -58,6 +58,12 @@ def decrement_pending_chunks(file_id: str, redis_client) -> None:
     if remaining == 0:
         mark_file_status(file_id, ProcessStatus.SUCCESS)
 
+def setup_opensearch():
+    opensearch_service = OpenSearchService(client=get_opensearch_client())
+    pipeline_schema = OpenSearchSchemaFactory.build_create_pipeline_schema(
+        pipeline_id="rrf_question_oriented"
+    )
+    opensearch_service.ensure_search_pipeline_exists(pipeline_schema)
 
 def sync_chunk_to_opensearch(
     file_id: str,

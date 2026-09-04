@@ -5,6 +5,35 @@ from django.core.exceptions import ObjectDoesNotExist
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class OpenSearchCreatePipelineSchema(BaseModel):
+    """Schema encapsulating configuration parameters for RRF search pipeline creation."""
+    model_config = ConfigDict(frozen=True)
+
+    pipeline_id: str = Field(..., min_length=1, description="Target search pipeline ID")
+    weight_power: int = Field(default=1, ge=1, description="Smoothing weight power for RRF scoring")
+    rank_constant: int = Field(default=60, ge=1, description="RRF rank constant (k)")
+    description: str = Field(
+        default="Post processor for hybrid search using RRF",
+        description="Pipeline description"
+    )
+
+    def to_pipeline_body(self) -> Dict[str, Any]:
+        """Generates the DSL body expected by OpenSearch put_search_pipeline API."""
+        return {
+            "description": self.description,
+            "phase_results_processors": [
+                {
+                    "score-ranker-processor": {
+                        "combination": {
+                            "technique": "rrf",
+                            "rank_constant": self.rank_constant
+                        }
+                    }
+                }
+            ]
+        }
+
+
 class OpenSearchSearchSchema(BaseModel):
     """Schema encapsulating parameters required for an OpenSearch query execution."""
     model_config = ConfigDict(frozen=True)
@@ -92,6 +121,20 @@ class OpenSearchSchemaFactory:
         routing_key = f"proj_{project_id}"  # Route by project_id to optimize shard-level search performance
 
         return index_name, routing_key, False
+
+    @classmethod
+    def build_create_pipeline_schema(
+        cls,
+        pipeline_id: str = "rrf_question_oriented",
+        weight_power: int = 1,
+        rank_constant: int = 60
+    ) -> OpenSearchCreatePipelineSchema:
+        """Builds schema for creating an RRF search pipeline."""
+        return OpenSearchCreatePipelineSchema(
+            pipeline_id=pipeline_id,
+            weight_power=weight_power,
+            rank_constant=rank_constant
+        )
 
     @classmethod
     def build_create_index_schema(
