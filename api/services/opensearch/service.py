@@ -162,7 +162,7 @@ class OpenSearchService:
                 "query": {
                     "bool": {
                         "must": [terms_query],
-                        "filter": [{"term": {"project_id": schema.project_id}}]
+                        "filter": [{"term": {"project_id.keyword": schema.project_id}}]
                     }
                 }
             }
