@@ -214,7 +214,7 @@ class OpenSearchService:
         if not schema.file_ids:
             return 0
 
-        terms_query = {"terms": {"file_id.keyword": schema.file_ids}}
+        terms_query = {"terms": {"file_id": schema.file_ids}}
 
         if schema.project_id:
             query_body = {
@@ -222,7 +222,7 @@ class OpenSearchService:
                 "query": {
                     "bool": {
                         "must": [terms_query],
-                        "filter": [{"term": {"project_id.keyword": schema.project_id}}]
+                        "filter": [{"term": {"project_id": schema.project_id}}]
                     }
                 }
             }
