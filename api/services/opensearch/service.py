@@ -50,49 +50,42 @@ class OpenSearchService:
                     "required": getattr(schema, "is_pool_mode", True)
                 },
                 "properties": {
-                    # --------------------------------------------------------
                     # 1. Tenant & Identifier Metadata
-                    # --------------------------------------------------------
-                    "project_id": {
-                        "type": "keyword"
-                    },
-                    "file_id": {
-                        "type": "keyword"
-                    },
-                    "chunk_id": {
-                        "type": "keyword"
+                    "project_id": {"type": "keyword"},
+                    "file_id": {"type": "keyword"},
+                    "chunk_id": {"type": "keyword"},
+
+                    # 2. Text Search Fields & Metadata
+                    "target_question": {"type": "text"},
+                    "scope_domain": {"type": "keyword"},
+                    "scope_impact_level": {"type": "keyword"},
+                    "scope_boundaries": {"type": "keyword"},
+
+                    "concept_title": {"type": "text"},
+                    "concept_description": {"type": "text"},
+
+                    "tags": {"type": "keyword"},
+                    "triples": {
+                        "type": "nested",
+                        "properties": {
+                            "subject": {"type": "keyword"},
+                            "predicate": {"type": "keyword"},
+                            "object": {"type": "keyword"}
+                        }
                     },
 
-                    # --------------------------------------------------------
-                    # 2. Text Search Fields (BM25 Lexical Matching)
-                    # --------------------------------------------------------
-                    "target_question": {
-                        "type": "text"
-                    },
-                    "concept_title": {
-                        "type": "text"
-                    },
-                    # Object mapping structure aligned with ChunkEvidence payload
-                    "evidence_text": {
-                        "properties": {
-                            "excerptText": {
-                                "type": "text"
-                            },
-                            "location": {
-                                "type": "text",
-                                "fields": {
-                                    "keyword": {
-                                        "type": "keyword",
-                                        "ignore_above": 256
-                                    }
-                                }
+                    "evidence_text": {"type": "text"},
+                    "evidence_location": {
+                        "type": "text",
+                        "fields": {
+                            "keyword": {
+                                "type": "keyword",
+                                "ignore_above": 256
                             }
                         }
                     },
 
-                    # --------------------------------------------------------
                     # 3. Dense Multi-Vector Fields (FAISS Engine)
-                    # --------------------------------------------------------
                     "question_vector": {
                         "type": "knn_vector",
                         "dimension": schema.dimension,

@@ -95,12 +95,30 @@ def sync_chunk_to_opensearch(
         concept_title = concept.get("title", "") if isinstance(concept, dict) else getattr(concept, "title", "")
 
         opensearch_doc = {
+            # Metadata
             "chunk_id": str(chunk_id),
             "file_id": str(file_id),
             "project_id": str(project.id),
-            "target_question": chunk_data.get("question", ""),
+
+            # Layer 1: Alignment & Scope
+            "target_question": chunk_data.get("alignment", {}).get("targetQuestion", ""),
+            "scope_domain": chunk_data.get("alignment", {}).get("scope", {}).get("domain", ""),
+            "scope_impact_level": chunk_data.get("alignment", {}).get("scope", {}).get("impactLevel", "operational"),
+            "scope_boundaries": chunk_data.get("alignment", {}).get("scope", {}).get("boundaries", []),
+
+            # Layer 2: Concept
             "concept_title": concept_title,
-            "evidence_text": chunk_data.get("evidence", ""),
+            "concept_description": chunk_data.get("concept", {}).get("description", ""),
+
+            # Layer 3: Keywords & Triples
+            "tags": chunk_data.get("keywords", {}).get("tags", []),
+            "triples": chunk_data.get("keywords", {}).get("triples", []),  # 內部為 [{subject, predicate, object}, ...]
+
+            # Layer 4: Fact & Evidence
+            "evidence_text": chunk_data.get("evidence", {}).get("excerptText", ""),
+            "evidence_location": chunk_data.get("evidence", {}).get("location", ""),
+
+            # Multi-Vector Embeddings
             "question_vector": question_vector,
             "concept_vector": concept_vector,
             "evidence_vector": evidence_vector,
