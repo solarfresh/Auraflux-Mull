@@ -70,7 +70,12 @@ class OpenSearchService:
                         "properties": {
                             "subject": {"type": "keyword"},
                             "predicate": {"type": "keyword"},
-                            "object": {"type": "keyword"}
+                            "object": {"type": "keyword"},
+                            # Embedded Quantitative Metric Normalization Properties
+                            "metric_name": {"type": "keyword"},
+                            "normalized_value": {"type": "double"},
+                            "unit": {"type": "keyword"},
+                            "operator": {"type": "keyword"}
                         }
                     },
 
